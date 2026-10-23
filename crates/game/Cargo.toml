@@ -1,0 +1,46 @@
+[package]
+name = "game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "game"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "game"
+path = "src/main.rs"
+
+[dependencies]
+bevy = { workspace = true, default-features = true, features = ["jpeg", "wav"] }
+avian3d = { workspace = true }
+protocol = { path = "../protocol" }
+nakama_client = { path = "../nakama_client" }
+uuid = { workspace = true }
+crossbeam-channel = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bevy_hui = { version = "0.8", features = ["picking"] }
+bevy_hui_widgets = "0.7"
+bevy_ios_safearea = "0.8"
+# Timer for CdnReader, which waits for files that are still downloading (already in the tree through bevy_tasks).
+async-io = "2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { workspace = true, features = ["android-native-activity"] }
+jni = "0.21"
+# Same version as the one Bevy renders with; used to read the GPU name before the renderer starts.
+wgpu = { version = "30", default-features = false }
+
+# iOS 27 requires the UIScene life cycle, which winit does not adopt yet: bevy_ios_app_delegate
+# provides the scene delegate (opt-in through UIApplicationSceneManifest in Info.plist) and
+# forwards URL opens (Google sign-in redirect).
+[target.'cfg(target_os = "ios")'.dependencies]
+bevy_ios_app_delegate = "0.7"
+# Same winit as bevy_winit (0.30): needed for the iOS-only WindowExtIOS trait.
+winit = { version = "0.30", default-features = false }
+objc2 = "0.6"
+objc2-ui-kit = "0.3.1"
+# Keychain access for the saved login (see secure_store.rs).
+security-framework = "3"

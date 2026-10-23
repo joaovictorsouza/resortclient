@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key><string>new_game</string>
+    <key>CFBundleIdentifier</key><string>br.eng.joaovictor.resort</string>
+    <key>CFBundleName</key><string>new_game</string>
+    <key>CFBundleDisplayName</key><string>new_game</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>0.1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>MinimumOSVersion</key><string>16.0</string>
+    <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+    <key>UIRequiresFullScreen</key><true/>
+    <key>UIStatusBarHidden</key><true/>
+    <!-- The root view controller (winit's, see src/ios_window.rs) decides the status bar visibility:
+         with UIScene the UIStatusBarHidden key above is not enough on its own. -->
+    <key>UIViewControllerBasedStatusBarAppearance</key><true/>
+    <key>UISupportedInterfaceOrientations</key>
+    <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+    <key>UILaunchScreen</key><dict/>
+    <!-- Opts into the UIScene life cycle (required by the iOS 27 SDK); bevy_ios_app_delegate provides the scene delegate (no UISceneConfigurations needed) -->
+    <key>UIApplicationSceneManifest</key>
+    <dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+    <!-- Dev server speaks plain http/ws on the LAN -->
+    <key>NSAppTransportSecurity</key>
+    <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Connects to the local development game server.</string>
+    <!-- Google sign-in (GoogleSignIn-iOS reads GIDClientID/GIDServerClientID); values mirror Config/Base.xcconfig -->
+    <key>GIDClientID</key>
+    <string>785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk.apps.googleusercontent.com</string>
+    <key>GIDServerClientID</key>
+    <string>785803086063-jun3ecqn84ogjm34sf6727nnblacg0sj.apps.googleusercontent.com</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLSchemes</key>
+            <array><string>com.googleusercontent.apps.785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk</string></array>
+        </dict>
+    </array>
+</dict>
+</plist>

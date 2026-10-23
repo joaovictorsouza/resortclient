@@ -1,0 +1,64 @@
+<template>
+    <!-- Safe-area spacers (see safe_area.rs): the window fills the screen, its content does not. -->
+    <property name="safe_t">12px</property>
+    <property name="safe_r">12px</property>
+    <property name="safe_b">12px</property>
+    <property name="safe_l">12px</property>
+    <!-- Full width, not full height: the room stays visible above and below. -->
+    <node class="absolute w-full h-full flex items-center justify-center bg-slate-950/70">
+    <node class="flex flex-col w-full h-[92%] bg-slate-900 border border-slate-700 overflow-hidden">
+        <!-- Header: title | tabs (centered) | close -->
+        <node class="flex flex-row items-center h-11 shrink-0 bg-slate-800">
+            <node class="h-full shrink-0" width="{safe_l}"/>
+            <node class="flex flex-row flex-1 items-center gap-3">
+                <image src="ui/icons/backpack.png" class="w-6 h-6 tint-[#818cf8]"/>
+                <text class="font-ui text-xl text-white">Inventário</text>
+            </node>
+            <node id="inv_tabs" class="flex flex-row items-center gap-2">
+                <node class="flex flex-row items-center gap-2 px-4 h-8 rounded-full bg-indigo-600">
+                    <image src="ui/icons/armchair.png" class="w-4 h-4 tint-white"/>
+                    <text class="font-ui text-sm text-white">Mobília</text>
+                </node>
+            </node>
+            <node class="flex flex-row flex-1 items-center justify-end">
+                <button id="close" on_press="inv_close" class="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-700 hover:bg-rose-600 duration-150">
+                    <image src="ui/icons/x.png" class="w-5 h-5 tint-white"/>
+                </button>
+            </node>
+            <node class="h-full shrink-0" width="{safe_r}"/>
+        </node>
+        <node class="w-full h-3 shrink-0"/>
+        <!-- Body: side menu (search above the categories) | grid | item detail -->
+        <node class="flex flex-row flex-1 min-h-[0px] overflow-hidden">
+            <node class="h-full shrink-0" width="{safe_l}"/>
+            <node class="flex flex-col w-48 shrink-0 gap-2">
+                <!-- Search (bevy_hui_widgets input: value lives in the TextInput component) -->
+                <button id="inv_search" on_spawn="init_input" on_change="inv_search_changed" target="inv_search_text" class="flex flex-row items-center gap-2 px-3 h-9 shrink-0 rounded-lg bg-slate-950/50 border-2 border-slate-700 active:border-indigo-500">
+                    <image src="ui/icons/magnifying-glass.png" class="w-4 h-4 tint-slate-400"/>
+                    <node class="relative flex flex-1 items-center h-full">
+                        <text id="inv_search_ph" class="absolute left-0 font-ui text-sm text-slate-500">Buscar...</text>
+                        <text id="inv_search_text" class="font-ui text-sm text-white"> </text>
+                    </node>
+                </button>
+                <node id="inv_cats" class="flex flex-col gap-1"></node>
+            </node>
+            <node class="w-3 h-full shrink-0"/>
+            <node class="flex flex-col flex-1 min-w-[0px]">
+                <node class="relative flex flex-1 min-h-[0px]">
+                    <node id="inv_scroll" class="flex flex-1 items-start overflow-y-scroll rounded-lg bg-slate-950/50 pl-2 pr-4 py-2">
+                        <node id="inv_grid" class="grid grid-cols-5 gap-2 w-full content-start items-start"></node>
+                    </node>
+                    <!-- Scrollbar: the thumb is positioned from Rust via UiTransform (hui rewrites Node every frame) -->
+                    <node id="inv_track" class="absolute top-2 bottom-2 right-1 w-[6px] rounded-full bg-slate-800">
+                        <node id="inv_thumb" class="w-full h-full rounded-full bg-slate-400"></node>
+                    </node>
+                </node>
+            </node>
+            <node class="w-3 h-full shrink-0"/>
+            <node id="inv_detail" class="flex flex-col w-44 shrink-0"></node>
+            <node class="h-full shrink-0" width="{safe_r}"/>
+        </node>
+        <node class="w-full h-3 shrink-0"/>
+    </node>
+    </node>
+</template>

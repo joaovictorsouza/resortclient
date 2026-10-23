@@ -1,0 +1,20 @@
+{
+  "device_id": "b6dcbb90-4ede-4a62-8b0f-b2d9a3ea28dd",
+  "nickname": "Bob",
+  "created_at": 1771270803,
+  "appearance": {
+    "skin_color": "#D6A374",
+    "face_id": "male_emotion_usual_001",
+    "hair_id": "hairstyle_male_010",
+    "hair_color": "#1C1C1C",
+    "top_id": "t_shirt_009",
+    "top_color": "#E91E63",
+    "bottom_id": "shorts_003",
+    "bottom_color": "#8BC34A",
+    "shoes_id": "shoe_slippers_002",
+    "shoes_color": "#FFEB3B",
+    "accessories": [
+      "headphones_002"
+    ]
+  }
+}

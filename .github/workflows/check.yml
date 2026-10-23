@@ -1,0 +1,32 @@
+name: check
+
+# Quality gate for pull requests. No secrets are used here, so it is safe to run on code from forks.
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: System libraries for Bevy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libwayland-dev libasound2-dev libudev-dev libxkbcommon-dev pkg-config
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Run scripts/check.sh (the contract drift check is skipped, the server repository is private)
+        run: ./scripts/check.sh

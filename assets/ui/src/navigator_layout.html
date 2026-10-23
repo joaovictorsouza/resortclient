@@ -1,0 +1,13 @@
+<template>
+    <property name="layout_id">small_6x6</property>
+    <property name="name">Layout</property>
+    <property name="meta">6x6</property>
+    <property name="bg">#1e293b</property>
+    <property name="edge">#334155</property>
+    <node class="flex">
+    <button on_press="nav_layout" tag:layout_id="{layout_id}" class="flex flex-col items-center gap-1 w-40 px-3 py-2 rounded-lg border-2 hover:bg-slate-700 duration-150" background="{bg}" border_color="{edge}">
+        <text class="font-ui text-sm text-white">{name}</text>
+        <text class="font-ui text-xs text-slate-400">{meta}</text>
+    </button>
+    </node>
+</template>

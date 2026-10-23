@@ -1,0 +1,15 @@
+<template>
+    <property name="placeholder">Buscar...</property>
+    <node class="flex flex-row gap-3 w-full">
+        <button id="nav_input" on_spawn="init_input" on_change="nav_input_changed" target="nav_input_text" class="flex flex-row items-center gap-3 px-3 h-9 flex-1 rounded-lg bg-slate-950/50 border-2 border-slate-700 active:border-indigo-500">
+            <image src="ui/icons/magnifying-glass.png" class="w-4 h-4 tint-slate-400"/>
+            <node class="relative flex flex-1 items-center h-full">
+                <text id="nav_input_ph" class="absolute left-0 font-ui text-sm text-slate-500">{placeholder}</text>
+                <text id="nav_input_text" class="font-ui text-sm text-white"> </text>
+            </node>
+        </button>
+        <button on_press="nav_search_submit" class="flex flex-row items-center justify-center gap-2 h-9 px-5 shrink-0 rounded-lg bg-indigo-600 hover:bg-indigo-500 duration-150">
+            <text class="font-ui text-sm text-white">Buscar</text>
+        </button>
+    </node>
+</template>

@@ -1,0 +1,16 @@
+// Shared build settings. Personal values go in Config/Local.xcconfig (git-ignored, see the .example).
+PRODUCT_BUNDLE_IDENTIFIER = br.eng.joaovictor.resort
+IPHONEOS_DEPLOYMENT_TARGET = 16.0
+
+// Info.plist keeps these as literals (scripts/build-ios-device.sh packs it without Xcode); keep in sync.
+// Google sign-in: iOS OAuth client, and the Web client used as the id_token audience.
+CLIENT_ID = 785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk.apps.googleusercontent.com
+SERVER_CLIENT_ID = 785803086063-jun3ecqn84ogjm34sf6727nnblacg0sj.apps.googleusercontent.com
+// URL scheme = the iOS client id reversed.
+REVERSED_CLIENT_ID = com.googleusercontent.apps.785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk
+
+// Automatic signing with your personal team. Set DEVELOPMENT_TEAM in Config/Local.xcconfig.
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+#include? "Local.xcconfig"

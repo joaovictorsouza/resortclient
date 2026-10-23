@@ -1,0 +1,13 @@
+<template>
+    <property name="key">face</property>
+    <property name="label">Rosto</property>
+    <property name="icon">ui/icons/user.png</property>
+    <property name="bg">#1e293b</property>
+    <!-- Dynamic styles are not compiled on the template root: wrap the button. -->
+    <node class="flex">
+    <button on_press="cc_tab" tag:key="{key}" class="flex flex-row items-center gap-2 px-3 py-2 rounded-full bg-[{bg}] hover:bg-slate-700 duration-150">
+        <image src="{icon}" class="w-4 h-4 tint-white"/>
+        <text class="font-ui text-xs text-white">{label}</text>
+    </button>
+    </node>
+</template>

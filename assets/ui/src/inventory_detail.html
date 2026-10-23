@@ -1,0 +1,24 @@
+<template>
+    <property name="catalog_id">item</property>
+    <property name="name">Item</property>
+    <property name="thumb">ui/thumbs/missing.png</property>
+    <property name="kind">Tipo</property>
+    <property name="size">1x1</property>
+    <property name="qty">1</property>
+    <property name="place_display">flex</property>
+    <property name="note_display">none</property>
+    <!-- Compact: the place button follows the info instead of being pinned to the bottom, so it
+         is always inside the visible area on a phone held sideways. -->
+    <node class="flex flex-col gap-2 w-full p-2 rounded-lg bg-slate-800 border border-slate-700">
+        <node class="flex items-center justify-center w-full h-[72px] rounded-md bg-slate-950/60">
+            <image src="{thumb}" class="w-14 h-14"/>
+        </node>
+        <text class="font-ui text-sm text-white">{name}</text>
+        <text class="font-ui text-xs text-slate-400">{kind} · {size} tiles</text>
+        <text display="{note_display}" class="font-ui text-xs text-slate-400">Modo construção disponível apenas em salas próprias.</text>
+        <button display="{place_display}" on_press="inv_place" tag:catalog_id="{catalog_id}" class="flex-row items-center justify-center gap-2 h-9 shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-500 duration-150">
+            <image src="ui/icons/check.png" class="w-4 h-4 tint-white"/>
+            <text class="font-ui text-xs text-white">Colocar ({qty})</text>
+        </button>
+    </node>
+</template>

@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Rust / Cargo
+target/
+**/*.rs.bk
+
+# Python tooling
+__pycache__/
+*.pyc
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / local overrides
+.env
+.env.local
+
+# Blender temp/large files
+Temp Package/
+*.blend1
+
+# CI: checkout of the server contract
+.server-contract/
+.assets-publish.env
+build/

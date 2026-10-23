@@ -1,0 +1,81 @@
+# XcodeGen spec. Regenerate the project with scripts/gen-ios-project.sh (needs `brew install xcodegen`).
+name: Resort
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+options:
+  bundleIdPrefix: br.eng.joaovictor
+  deploymentTarget:
+    iOS: "16.0"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
+targets:
+  Resort:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../assets
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    settings:
+      base:
+        PRODUCT_NAME: new_game
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        SWIFT_OBJC_BRIDGING_HEADER: Sources/Bridge.h
+        ARCHS: arm64
+        ENABLE_BITCODE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        RUST_PROFILE: debug
+        RUST_LIB[sdk=iphonesimulator*]: $(SRCROOT)/../target/aarch64-apple-ios-sim/$(RUST_PROFILE)/libgame.a
+        RUST_LIB[sdk=iphoneos*]: $(SRCROOT)/../target/aarch64-apple-ios/$(RUST_PROFILE)/libgame.a
+        EXCLUDED_ARCHS[sdk=iphonesimulator*]: x86_64
+        OTHER_LDFLAGS:
+          - -lc++
+          - -liconv
+          - -framework UIKit
+          - -framework Metal
+          - -framework QuartzCore
+          - -framework CoreGraphics
+          - -framework CoreAudio
+          - -framework AudioToolbox
+          - -framework AVFoundation
+          - -framework CoreMedia
+          - -framework CoreVideo
+          - -framework CoreFoundation
+          - -framework Security
+          - -framework SystemConfiguration
+          - -framework GameController
+          - -framework CoreHaptics
+          - -framework CoreMotion
+          - -framework OpenGLES
+          - -framework UserNotifications
+          - -framework UniformTypeIdentifiers
+          - $(RUST_LIB)
+      configs:
+        Release:
+          RUST_PROFILE: release
+    preBuildScripts:
+      - name: Build Rust library
+        basedOnDependencyAnalysis: false
+        script: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+          case "$PLATFORM_NAME" in
+            iphonesimulator) TARGET=aarch64-apple-ios-sim ;;
+            *) TARGET=aarch64-apple-ios ;;
+          esac
+          FLAGS=(-p game --lib --target "$TARGET")
+          [ "$RUST_PROFILE" = release ] && FLAGS+=(--release)
+          cd "$SRCROOT/.."
+          rustup target add "$TARGET" >/dev/null
+          # Only the staticlib: the cdylib would fail to link without the Swift bridge symbols.
+          cargo rustc "${FLAGS[@]}" --crate-type staticlib

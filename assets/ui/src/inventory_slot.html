@@ -1,0 +1,19 @@
+<template>
+    <property name="catalog_id">item</property>
+    <property name="name">Item</property>
+    <property name="thumb">ui/thumbs/missing.png</property>
+    <property name="qty">1</property>
+    <property name="edge">#334155</property>
+    <!-- bevy_hui 0.7 does not compile dynamic styles on the template root, so wrap the button. -->
+    <node class="flex">
+    <button id="slot" on_press="inv_select" tag:catalog_id="{catalog_id}" class="relative flex flex-col w-full h-[104px] overflow-hidden items-center gap-1 p-1 rounded-lg bg-slate-800 border-2 hover:bg-slate-700 duration-150" border_color="{edge}">
+        <image src="{thumb}" class="w-11 h-11"/>
+        <node class="absolute top-1 right-1 px-1 rounded-full bg-emerald-600">
+            <text class="font-ui text-xs text-white">x{qty}</text>
+        </node>
+        <node class="flex w-full h-9 items-start overflow-hidden">
+            <text class="font-ui text-xs text-slate-200 text-center w-full">{name}</text>
+        </node>
+    </button>
+    </node>
+</template>

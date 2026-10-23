@@ -1,0 +1,60 @@
+name: build-ios
+
+# Manual build of the iOS IPA, UNSIGNED for now: it compiles and packs the app but does not install
+# on a device until it is signed. Signing (certificate and profile from the Environment's secrets)
+# is a later step; see ai-docs/decisions/0012-*.md.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (selects environments/<name>.env and the GitHub Environment)
+        type: choice
+        options: [dev, prod]
+        required: true
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-ios-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 120
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      SIGNING: none
+      NAKAMA_SERVER_KEY: ${{ secrets.NAKAMA_SERVER_KEY }}
+      BUILDS_R2_ACCOUNT_ID: ${{ secrets.BUILDS_R2_ACCOUNT_ID }}
+      BUILDS_R2_BUCKET: ${{ secrets.BUILDS_R2_BUCKET }}
+      BUILDS_R2_ACCESS_KEY_ID: ${{ secrets.BUILDS_R2_ACCESS_KEY_ID }}
+      BUILDS_R2_SECRET_ACCESS_KEY: ${{ secrets.BUILDS_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check where the IPA will go before spending build minutes
+        run: scripts/ci/deliver-build.sh --check "$ENVIRONMENT"
+      - name: Tools
+        run: |
+          brew install xcodegen
+          rustup show
+          rustup target add aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate the Xcode project
+        run: scripts/gen-ios-project.sh
+      - name: Build unsigned IPA
+        run: scripts/export-ipa.sh
+      - name: Deliver IPA
+        run: scripts/ci/deliver-build.sh "$ENVIRONMENT" target/ios/export/new_game-unsigned.ipa "resort-${ENVIRONMENT}-${GITHUB_RUN_NUMBER}-unsigned.ipa"
+      - name: Short-lived artifact (dev only, when no private bucket is configured)
+        if: ${{ inputs.environment == 'dev' && env.BUILDS_R2_BUCKET == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resort-dev-ipa-unsigned
+          path: target/ios/export/new_game-unsigned.ipa
+          retention-days: 1
