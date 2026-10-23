@@ -75,7 +75,7 @@ jobs:
         run: scripts/ci/deliver-build.sh "$ENVIRONMENT" target/android/new_game.apk "resort-${ENVIRONMENT}-${GITHUB_RUN_NUMBER}.apk"
       - name: Short-lived artifact (dev only, when no private bucket is configured)
         if: ${{ inputs.environment == 'dev' && env.BUILDS_R2_BUCKET == '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: resort-dev-apk
           path: target/android/new_game.apk

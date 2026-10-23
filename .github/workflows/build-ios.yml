@@ -53,7 +53,7 @@ jobs:
         run: scripts/ci/deliver-build.sh "$ENVIRONMENT" target/ios/export/new_game-unsigned.ipa "resort-${ENVIRONMENT}-${GITHUB_RUN_NUMBER}-unsigned.ipa"
       - name: Short-lived artifact (dev only, when no private bucket is configured)
         if: ${{ inputs.environment == 'dev' && env.BUILDS_R2_BUCKET == '' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: resort-dev-ipa-unsigned
           path: target/ios/export/new_game-unsigned.ipa
