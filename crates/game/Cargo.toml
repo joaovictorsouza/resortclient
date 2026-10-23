@@ -29,7 +29,7 @@ async-io = "2"
 
 [target.'cfg(target_os = "android")'.dependencies]
 bevy = { workspace = true, features = ["android-native-activity"] }
-jni = "0.21"
+jni = "0.22"
 # Same version as the one Bevy renders with; used to read the GPU name before the renderer starts.
 wgpu = { version = "30", default-features = false }
 
