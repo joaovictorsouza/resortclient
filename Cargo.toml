@@ -23,7 +23,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 futures-util = "0.3"
 crossbeam-channel = "0.5"
 uuid = { version = "1.15", features = ["v4"] }
-base64 = "0.22"
+base64 = "0.23"
 thiserror = "2.0"
 
 [profile.dev.package."*"]
