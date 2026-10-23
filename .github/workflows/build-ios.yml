@@ -34,7 +34,7 @@ jobs:
       BUILDS_R2_ACCESS_KEY_ID: ${{ secrets.BUILDS_R2_ACCESS_KEY_ID }}
       BUILDS_R2_SECRET_ACCESS_KEY: ${{ secrets.BUILDS_R2_SECRET_ACCESS_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - name: Check where the IPA will go before spending build minutes
