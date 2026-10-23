@@ -1,0 +1,15 @@
+<template>
+    <property name="key">all</property>
+    <property name="label">Todos</property>
+    <property name="icon">ui/icons/package.png</property>
+    <property name="bg">#1e293b</property>
+    <node class="flex w-full">
+    <!-- Fixed height: a long label is cut, never wrapped onto a second line. -->
+    <button on_press="inv_filter" tag:key="{key}" class="flex flex-row items-center gap-2 w-full h-9 shrink-0 px-2 rounded-lg hover:bg-slate-700 duration-150" background="{bg}" overflow="hidden hidden">
+        <image src="{icon}" class="w-4 h-4 shrink-0 tint-slate-300"/>
+        <node class="flex flex-1 min-w-[0px] items-center h-full overflow-hidden">
+            <text class="font-ui text-sm text-slate-100" text_layout="left no_wrap">{label}</text>
+        </node>
+    </button>
+    </node>
+</template>

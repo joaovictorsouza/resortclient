@@ -1,0 +1,17 @@
+<template>
+    <property name="room_id">lobby</property>
+    <property name="name">Sala</property>
+    <property name="meta">-</property>
+    <node class="flex w-full">
+        <node class="flex flex-row items-center justify-between gap-3 w-full px-3 py-2 rounded-lg bg-slate-800 border border-slate-700">
+            <node class="flex flex-col gap-1 flex-1 min-w-[0px]">
+                <text class="font-ui text-sm text-white">{name}</text>
+                <text class="font-ui text-xs text-slate-400">{meta}</text>
+            </node>
+            <button on_press="nav_join" tag:room_id="{room_id}" class="flex flex-row items-center justify-center gap-2 h-9 px-3 shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-500 duration-150">
+                <image src="ui/icons/door-open.png" class="w-4 h-4 tint-white"/>
+                <text class="font-ui text-sm text-white">Entrar</text>
+            </button>
+        </node>
+    </node>
+</template>

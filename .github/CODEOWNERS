@@ -1,0 +1,7 @@
+# Changes to CI, build and signing scripts, and environments need the owner's review.
+/.github/            @joaovictorsouza
+/scripts/            @joaovictorsouza
+/ios/                @joaovictorsouza
+/android/            @joaovictorsouza
+/environments/       @joaovictorsouza
+/AGENTS.md           @joaovictorsouza

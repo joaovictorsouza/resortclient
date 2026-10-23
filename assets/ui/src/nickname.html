@@ -1,0 +1,18 @@
+<template>
+    <node class="absolute w-full h-full flex flex-col items-center justify-center bg-slate-950/90">
+        <node class="flex flex-col items-center gap-4 w-[420px] max-w-[96vw] p-6 rounded-2xl bg-slate-900/95 border border-slate-700">
+            <text class="font-ui text-2xl text-white">Escolha seu apelido</text>
+            <text class="font-ui text-sm text-slate-400 text-center">De 3 a 16 caracteres (letras, números e _)</text>
+            <button id="nick_input" on_spawn="init_input" on_change="nickname_changed" target="nick_input_text" class="flex flex-row items-center px-4 h-12 w-full rounded-xl bg-slate-950/50 border-2 border-slate-700 active:border-indigo-500">
+                <node class="relative flex flex-1 items-center h-full">
+                    <text id="nick_input_ph" class="absolute left-0 font-ui text-base text-slate-500">Apelido...</text>
+                    <text id="nick_input_text" class="font-ui text-base text-white"> </text>
+                </node>
+            </button>
+            <text id="nick_error" class="font-ui text-sm text-rose-400 text-center"> </text>
+            <button on_press="nickname_submit" class="flex flex-row items-center justify-center w-full h-12 rounded-xl bg-indigo-600 hover:bg-indigo-500 duration-150">
+                <text class="font-ui text-base text-white">Confirmar e jogar</text>
+            </button>
+        </node>
+    </node>
+</template>

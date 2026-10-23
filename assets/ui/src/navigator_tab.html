@@ -1,0 +1,13 @@
+<template>
+    <property name="key">public</property>
+    <property name="label">Aba</property>
+    <property name="icon">ui/icons/buildings.png</property>
+    <property name="bg">#1e293b</property>
+    <!-- Dynamic styles are not compiled on the template root: wrap the button. -->
+    <node class="flex">
+    <button on_press="nav_tab" tag:key="{key}" class="flex flex-row items-center gap-2 px-3 h-8 rounded-full hover:bg-slate-700 duration-150" background="{bg}">
+        <image src="{icon}" class="w-4 h-4 tint-white"/>
+        <text class="font-ui text-sm text-white">{label}</text>
+    </button>
+    </node>
+</template>

@@ -1,0 +1,23 @@
+<template>
+    <property name="request_id">0</property>
+    <property name="name">Visitante</property>
+    <node class="absolute top-[88px] w-full flex justify-center">
+        <node class="flex flex-col items-center gap-4 w-[420px] max-w-[96vw] p-5 rounded-2xl bg-slate-900/95 border border-slate-700">
+            <node class="flex flex-row items-center gap-3">
+                <image src="ui/icons/bell.png" class="w-6 h-6 tint-amber-400"/>
+                <text class="font-ui text-lg text-amber-400">Campainha da sala</text>
+            </node>
+            <text class="font-ui text-sm text-slate-100 text-center">{name} quer entrar no seu espaço privado.</text>
+            <node class="flex flex-row gap-3">
+                <button on_press="doorbell_allow" tag:request_id="{request_id}" class="flex flex-row items-center justify-center gap-2 h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 duration-150">
+                    <image src="ui/icons/check.png" class="w-4 h-4 tint-white"/>
+                    <text class="font-ui text-sm text-white">Permitir entrada</text>
+                </button>
+                <button on_press="doorbell_deny" tag:request_id="{request_id}" class="flex flex-row items-center justify-center gap-2 h-11 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 duration-150">
+                    <image src="ui/icons/x.png" class="w-4 h-4 tint-white"/>
+                    <text class="font-ui text-sm text-white">Recusar</text>
+                </button>
+            </node>
+        </node>
+    </node>
+</template>

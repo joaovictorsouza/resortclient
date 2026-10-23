@@ -1,0 +1,45 @@
+<template>
+    <node class="absolute w-full h-full flex flex-row justify-between p-8">
+        <!-- Left: rotate / randomize controls (the 3D preview shows through) -->
+        <node class="flex flex-col justify-end items-start gap-3">
+            <button id="cc_rotate_left" on_press="cc_rotate_left" class="flex items-center justify-center w-12 h-12 rounded-full bg-slate-900/85 hover:bg-slate-700 duration-150">
+                <image src="ui/icons/arrow-counter-clockwise.png" class="w-6 h-6 tint-white"/>
+            </button>
+            <button id="cc_rotate_right" on_press="cc_rotate_right" class="flex items-center justify-center w-12 h-12 rounded-full bg-slate-900/85 hover:bg-slate-700 duration-150">
+                <image src="ui/icons/arrow-clockwise.png" class="w-6 h-6 tint-white"/>
+            </button>
+            <button id="cc_randomize" on_press="cc_randomize" class="flex flex-row items-center gap-2 h-11 px-4 rounded-xl bg-slate-900/85 hover:bg-slate-700 duration-150">
+                <image src="ui/icons/dice-five.png" class="w-5 h-5 tint-white"/>
+                <text class="font-ui text-sm text-white">Aleatório</text>
+            </button>
+        </node>
+        <!-- Right: customizer panel -->
+        <node class="flex flex-col w-[42vw] max-w-[440px] gap-4 p-5 rounded-2xl bg-slate-900/95 border border-slate-700">
+            <node class="flex flex-row items-center gap-3">
+                <image src="ui/icons/user.png" class="w-8 h-8 tint-indigo-400"/>
+                <node class="flex flex-col flex-1">
+                    <text class="font-ui text-xl text-white">Seu avatar</text>
+                    <text class="font-ui text-xs text-slate-400">Personalize cada detalhe do seu personagem</text>
+                </node>
+                <!-- Editor only: hidden from Rust while the avatar is being created for the first time -->
+                <button id="cc_close" on_press="cc_close" class="flex items-center justify-center w-10 h-10 shrink-0 rounded-full bg-slate-800 hover:bg-slate-600 duration-150">
+                    <image src="ui/icons/x.png" class="w-5 h-5 tint-white"/>
+                </button>
+            </node>
+            <node id="cc_tabs" class="flex flex-row flex-wrap gap-2"></node>
+            <node class="relative flex flex-1 min-h-[0px]">
+                <node id="cc_scroll" class="flex flex-1 items-start overflow-y-scroll rounded-xl bg-slate-950/50 pl-3 pr-5 py-3">
+                    <node id="cc_content" class="flex flex-col gap-3 w-full"></node>
+                </node>
+                <!-- Scrollbar: the thumb is positioned from Rust via UiTransform -->
+                <node id="cc_track" class="absolute top-3 bottom-3 right-1.5 w-[6px] rounded-full bg-slate-800">
+                    <node id="cc_thumb" class="w-full h-full rounded-full bg-slate-400"></node>
+                </node>
+            </node>
+            <button id="cc_save" on_press="cc_save" class="flex flex-row items-center justify-center gap-2 h-14 shrink-0 rounded-xl bg-emerald-600 hover:bg-emerald-500 duration-150">
+                <image src="ui/icons/check.png" class="w-5 h-5 tint-white"/>
+                <text id="cc_save_label" class="font-ui text-base text-white">Confirmar e entrar no jogo</text>
+            </button>
+        </node>
+    </node>
+</template>

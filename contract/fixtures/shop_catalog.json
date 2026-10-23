@@ -1,0 +1,1 @@
+{"categories": [{"id":"seats","name":"Assentos","icon":"armchair","parent":"furniture"}], "offers": [{"catalog_id":"seat_stool_1x1","category_id":"seats","name":"Banqueta Alta","width":1,"depth":1,"walkable":false,"price_silver":15,"price_gold":0}]}

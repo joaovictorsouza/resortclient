@@ -1,0 +1,18 @@
+{
+  "device_id": "41b0b335-b2b5-48c8-bede-e507876812ac",
+  "nickname": "Alice",
+  "created_at": 1771270792,
+  "appearance": {
+    "skin_color": "#D6A374",
+    "face_id": "male_emotion_happy_002",
+    "hair_id": "hairstyle_male_012",
+    "hair_color": "#2196F3",
+    "top_id": "outwear_036",
+    "top_color": "#3F51B5",
+    "bottom_id": "pants_014",
+    "bottom_color": "#9C27B0",
+    "shoes_id": "shoe_sneakers_009",
+    "shoes_color": "#3F51B5",
+    "accessories": []
+  }
+}

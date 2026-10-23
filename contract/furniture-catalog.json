@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "catalog_id": "bed_single_1x2",
+      "name": "Cama de Solteiro",
+      "category": "collider",
+      "width": 1,
+      "depth": 2,
+      "walkable": false,
+      "color": "#5dade2",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "carpet_green_tile",
+      "name": "Tapete Verde Esmeralda 2x2",
+      "category": "floor_decoration",
+      "width": 2,
+      "depth": 2,
+      "walkable": true,
+      "color": "#2ecc71",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "floor_yellow_tile",
+      "name": "Piso Decorativo Dourado",
+      "category": "floor_decoration",
+      "width": 1,
+      "depth": 1,
+      "walkable": true,
+      "color": "#f1c40f",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "seat_armchair_brown_leather",
+      "name": "Poltrona de Couro Marrom",
+      "category": "collider",
+      "width": 1,
+      "depth": 1,
+      "walkable": false,
+      "color": "#8b5a2b",
+      "asset_id": "armchair_brown_leather"
+    },
+    {
+      "catalog_id": "seat_bench_2x1",
+      "name": "Banco de Praça 2x1",
+      "category": "collider",
+      "width": 2,
+      "depth": 1,
+      "walkable": false,
+      "color": "#7f8c8d",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "seat_stool_1x1",
+      "name": "Banqueta Alta",
+      "category": "collider",
+      "width": 1,
+      "depth": 1,
+      "walkable": false,
+      "color": "#a0522d",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "solid_barrier_2x1",
+      "name": "Divisória de Carvalho 2x1",
+      "category": "collider",
+      "width": 2,
+      "depth": 1,
+      "walkable": false,
+      "color": "#e67e22",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "solid_blue_block",
+      "name": "Bloco Sólido Índigo",
+      "category": "collider",
+      "width": 1,
+      "depth": 1,
+      "walkable": false,
+      "color": "#4834d4",
+      "asset_id": ""
+    },
+    {
+      "catalog_id": "solid_red_block",
+      "name": "Bloco Sólido Carmesim",
+      "category": "collider",
+      "width": 1,
+      "depth": 1,
+      "walkable": false,
+      "color": "#eb4d4b",
+      "asset_id": ""
+    }
+  ]
+}

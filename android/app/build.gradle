@@ -1,0 +1,102 @@
+// Gradle project that packages the Rust game (libgame.so built by `cargo ndk`, see
+// scripts/run-android.sh and scripts/build-apk.sh) into an APK.
+//
+// Properties / env (never commit passwords):
+//   NAKAMA_HOST, NAKAMA_PORT, GAME_DEV_MODE, GAME_ENV  written to assets/dev.env (defaults below)
+//   NAKAMA_SERVER_KEY      appended to assets/dev.env when set
+//   ASSETS_MANIFEST_URL    CDN manifest (from environments/<env>.env); appended when set
+//   Release signing (without KEYSTORE_PASS the release APK is signed with the debug key):
+//     KEYSTORE (or RESORT_KEYSTORE), KEYSTORE_PASS, KEY_ALIAS, KEY_PASS
+//     (ANDROID_KEYSTORE_PASSWORD / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD also work)
+plugins {
+    id "com.android.application"
+}
+
+def prop = { String name, String fallback ->
+    System.getenv(name) ?: (project.findProperty(name) ?: fallback)
+}
+
+def devEnvDir = layout.buildDirectory.dir("generated/devenv")
+def writeDevEnv = tasks.register("writeDevEnv") {
+    def host = prop("NAKAMA_HOST", "127.0.0.1")
+    def port = prop("NAKAMA_PORT", "7350")
+    def devMode = prop("GAME_DEV_MODE", "0")
+    def gameEnv = prop("GAME_ENV", "dev")
+    def extra = prop("EXTRA_DEV_ENV", "")
+    def serverKey = prop("NAKAMA_SERVER_KEY", "")
+    def manifestUrl = prop("ASSETS_MANIFEST_URL", "")
+    def out = devEnvDir.map { it.file("dev.env") }
+    inputs.property("content", "${host}${port}${devMode}${gameEnv}${extra}${serverKey}${manifestUrl}")
+    outputs.file(out)
+    doLast {
+        def file = out.get().asFile
+        file.parentFile.mkdirs()
+        file.text = "NAKAMA_HOST=${host}\nNAKAMA_PORT=${port}\nGAME_DEV_MODE=${devMode}\nGAME_ENV=${gameEnv}\n${extra}" +
+                (serverKey ? "NAKAMA_SERVER_KEY=${serverKey}\n" : "") +
+                (manifestUrl ? "ASSETS_MANIFEST_URL=${manifestUrl}\n" : "")
+    }
+}
+
+android {
+    namespace "br.eng.joaovictor.resort"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "br.eng.joaovictor.resort"
+        minSdk 26   // AAudio (used by the audio backend) needs API 26
+        targetSdk 35
+        versionCode 1
+        versionName "0.1.0"
+        ndk { abiFilters "arm64-v8a" }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    signingConfigs {
+        release {
+            def ks = prop("KEYSTORE", prop("RESORT_KEYSTORE", ""))
+            def pass = prop("KEYSTORE_PASS", prop("ANDROID_KEYSTORE_PASSWORD", ""))
+            if (ks && pass) {
+                storeFile file(ks)
+                storePassword pass
+                keyAlias prop("KEY_ALIAS", prop("ANDROID_KEY_ALIAS", ""))
+                keyPassword prop("KEY_PASS", prop("ANDROID_KEY_PASSWORD", pass))
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release.storeFile ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ["../../target/android/jniLibs"]
+            assets.srcDirs = ["../../assets", devEnvDir]
+        }
+    }
+
+    androidResources {
+        // Template sources (Tailwind) are only needed to generate assets/ui/*.html.
+        ignoreAssetsPattern "!src:!.DS_Store"
+    }
+
+    packaging {
+        jniLibs.keepDebugSymbols += "**/libgame.so"
+    }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn writeDevEnv
+}
+
+dependencies {
+    implementation "androidx.credentials:credentials:1.3.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
+    implementation "com.google.android.libraries.identity.googleid:googleid:1.1.1"
+}

@@ -1,0 +1,34 @@
+<template>
+    <property name="catalog_id">item</property>
+    <property name="name">Item</property>
+    <property name="thumb">ui/thumbs/missing.png</property>
+    <property name="silver">0</property>
+    <property name="gold">0</property>
+    <property name="silver_display">none</property>
+    <property name="gold_display">none</property>
+    <property name="buy_bg">#059669</property>
+    <property name="buy_hover">#10b981</property>
+    <property name="buy_label">Comprar</property>
+    <!-- Dynamic styles are not compiled on the template root: wrap the card. -->
+    <node class="flex">
+    <node class="flex flex-col w-full items-center gap-1 p-2 rounded-lg bg-slate-800 border-2 border-slate-700">
+        <image src="{thumb}" class="w-12 h-12"/>
+        <node class="flex w-full h-7 items-center overflow-hidden">
+            <text class="font-ui text-xs text-slate-200 text-center w-full">{name}</text>
+        </node>
+        <node class="flex flex-row items-center justify-center gap-1 w-full h-5">
+            <node display="{silver_display}" class="flex-row items-center gap-1 px-2 rounded-full bg-slate-950/60">
+                <image src="ui/icons/coins.png" class="w-3 h-3 tint-slate-300"/>
+                <text class="font-ui text-xs text-white">{silver}</text>
+            </node>
+            <node display="{gold_display}" class="flex-row items-center gap-1 px-2 rounded-full bg-slate-950/60">
+                <image src="ui/icons/coins.png" class="w-3 h-3 tint-[#facc15]"/>
+                <text class="font-ui text-xs text-white">{gold}</text>
+            </node>
+        </node>
+        <button on_press="shop_buy" tag:catalog_id="{catalog_id}" class="flex items-center justify-center w-full h-7 shrink-0 rounded-md duration-150" background="{buy_bg}" hover:background="{buy_hover}">
+            <text class="font-ui text-xs text-white">{buy_label}</text>
+        </button>
+    </node>
+    </node>
+</template>

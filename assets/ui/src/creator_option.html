@@ -1,0 +1,12 @@
+<template>
+    <property name="category">hair</property>
+    <property name="id">item</property>
+    <property name="label">Item</property>
+    <property name="bg">#1e293b</property>
+    <property name="edge">#334155</property>
+    <node class="flex">
+    <button on_press="cc_item" tag:category="{category}" tag:id="{id}" class="flex items-center justify-center px-3 py-2 rounded-lg bg-[{bg}] border-2 border-[{edge}] hover:bg-slate-700 duration-150">
+        <text class="font-ui text-xs text-white">{label}</text>
+    </button>
+    </node>
+</template>

@@ -1,0 +1,47 @@
+<template>
+    <!-- Safe-area spacers (see safe_area.rs): the window fills the screen, its content does not. -->
+    <property name="safe_t">12px</property>
+    <property name="safe_r">12px</property>
+    <property name="safe_b">12px</property>
+    <property name="safe_l">12px</property>
+    <!-- Full width, not full height: the room stays visible above and below. -->
+    <node class="absolute w-full h-full flex items-center justify-center bg-slate-950/70">
+    <node class="flex flex-col w-full h-[92%] bg-slate-900 border border-slate-700 overflow-hidden">
+        <!-- Header: title | tabs (centered) | close -->
+        <node class="flex flex-row items-center h-11 shrink-0 bg-slate-800">
+            <node class="h-full shrink-0" width="{safe_l}"/>
+            <node class="flex flex-row flex-1 items-center gap-3">
+                <image src="ui/icons/compass.png" class="w-6 h-6 tint-[#818cf8]"/>
+                <text class="font-ui text-xl text-white">Salas</text>
+            </node>
+            <node id="nav_tabs" class="flex flex-row items-center gap-2"></node>
+            <node class="flex flex-row flex-1 items-center justify-end">
+                <button id="nav_close" on_press="nav_close" class="flex items-center justify-center w-8 h-8 rounded-lg bg-slate-700 hover:bg-rose-600 duration-150">
+                    <image src="ui/icons/x.png" class="w-5 h-5 tint-white"/>
+                </button>
+            </node>
+            <node class="h-full shrink-0" width="{safe_r}"/>
+        </node>
+        <node class="w-full h-3 shrink-0"/>
+        <!-- Body: text input bar (search / room name) above the list -->
+        <node class="flex flex-row flex-1 min-h-[0px] overflow-hidden">
+            <node class="h-full shrink-0" width="{safe_l}"/>
+            <node class="flex flex-col flex-1 min-w-[0px] gap-2">
+                <!-- Rebuilt only when the tab changes -->
+                <node id="nav_bar" class="flex flex-col w-full"></node>
+                <node class="relative flex flex-1 min-h-[0px]">
+                    <node id="nav_scroll" class="flex flex-1 items-start overflow-y-scroll rounded-lg bg-slate-950/50 pl-2 pr-4 py-2">
+                        <node id="nav_content" class="flex flex-col gap-2 w-full"></node>
+                    </node>
+                    <!-- Scrollbar: the thumb is positioned from Rust via UiTransform -->
+                    <node id="nav_track" class="absolute top-2 bottom-2 right-1 w-[6px] rounded-full bg-slate-800">
+                        <node id="nav_thumb" class="w-full h-full rounded-full bg-slate-400"></node>
+                    </node>
+                </node>
+            </node>
+            <node class="h-full shrink-0" width="{safe_r}"/>
+        </node>
+        <node class="w-full h-3 shrink-0"/>
+    </node>
+    </node>
+</template>

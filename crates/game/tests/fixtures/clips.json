@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "clips": {
+    "idle": {
+      "loop": true,
+      "duration_s": 2.8,
+      "contact_height": 0.7803
+    },
+    "walk": {
+      "loop": true,
+      "duration_s": 1.0333,
+      "contact_height": 0.7803,
+      "tiles_per_sec": 1.4088
+    },
+    "sit": {
+      "loop": true,
+      "duration_s": 0.5,
+      "contact_height": 0.3519
+    },
+    "lay": {
+      "loop": true,
+      "duration_s": 0.5,
+      "contact_height": 0.0
+    }
+  }
+}

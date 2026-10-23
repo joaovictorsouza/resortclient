@@ -1,0 +1,82 @@
+name: build-android
+
+# Manual build of the Android APK. Only people with write access can dispatch it; the `environment`
+# (dev or prod) applies that environment's protection rules and secrets.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (selects environments/<name>.env and the GitHub Environment)
+        type: choice
+        options: [dev, prod]
+        required: true
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-android-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 90
+    env:
+      ENVIRONMENT: ${{ inputs.environment }}
+      NAKAMA_SERVER_KEY: ${{ secrets.NAKAMA_SERVER_KEY }}
+      # Optional release signing; without it the APK is signed with the debug key.
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      # Optional private destination for builds (an R2 bucket that is NOT public).
+      BUILDS_R2_ACCOUNT_ID: ${{ secrets.BUILDS_R2_ACCOUNT_ID }}
+      BUILDS_R2_BUCKET: ${{ secrets.BUILDS_R2_BUCKET }}
+      BUILDS_R2_ACCESS_KEY_ID: ${{ secrets.BUILDS_R2_ACCESS_KEY_ID }}
+      BUILDS_R2_SECRET_ACCESS_KEY: ${{ secrets.BUILDS_R2_SECRET_ACCESS_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check where the APK will go before spending build minutes
+        run: scripts/ci/deliver-build.sh --check "$ENVIRONMENT"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Rust toolchain and cargo-ndk
+        run: |
+          rustup show
+          cargo install cargo-ndk --locked
+      - uses: Swatinem/rust-cache@v2
+      - name: Keystore (optional)
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+            echo "RESORT_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          else
+            echo "No keystore secret: the APK will be signed with the debug key."
+          fi
+      - name: Build APK
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:?the runner image has no NDK}"
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            scripts/build-apk.sh
+          else
+            PROFILE=release BUILD_ONLY=1 GAME_DEV_MODE=0 scripts/run-android.sh
+          fi
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Deliver APK
+        run: scripts/ci/deliver-build.sh "$ENVIRONMENT" target/android/new_game.apk "resort-${ENVIRONMENT}-${GITHUB_RUN_NUMBER}.apk"
+      - name: Short-lived artifact (dev only, when no private bucket is configured)
+        if: ${{ inputs.environment == 'dev' && env.BUILDS_R2_BUCKET == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: resort-dev-apk
+          path: target/android/new_game.apk
+          retention-days: 1

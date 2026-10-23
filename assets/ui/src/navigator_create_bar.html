@@ -1,0 +1,12 @@
+<template>
+    <property name="placeholder">Nome do espaço...</property>
+    <node class="flex flex-col gap-2 w-full">
+        <text class="font-ui text-sm text-slate-300">Nome do espaço (até 50 caracteres)</text>
+        <button id="nav_input" on_spawn="init_input" on_change="nav_input_changed" target="nav_input_text" class="flex flex-row items-center px-3 h-9 w-full rounded-lg bg-slate-950/50 border-2 border-slate-700 active:border-indigo-500">
+            <node class="relative flex flex-1 items-center h-full">
+                <text id="nav_input_ph" class="absolute left-0 font-ui text-sm text-slate-500">{placeholder}</text>
+                <text id="nav_input_text" class="font-ui text-sm text-white"> </text>
+            </node>
+        </button>
+    </node>
+</template>
