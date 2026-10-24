@@ -26,3 +26,9 @@ Todo `.glb` e áudio vai dentro do app, então conteúdo novo exige novo build e
 - A tela inicial espera o tier `core`. Se a sincronização falha (sem rede e sem cache), mostra "Sem conexão com o servidor de conteúdo" e tenta de novo com intervalo de 5, 10, 20 e 30 s; não há mais reserva embutida. A primeira abertura exige rede.
 - `clips.json` e `characters/catalog.json` são lidos como `JsonText` pelo `AssetServer`. O catálogo de cosméticos vindo do servidor (ou do cache) tem prioridade; o `characters/catalog.json` da CDN só cobre a primeira abertura, em que o criador de personagem abre antes da conexão.
 - `CharacterCatalog::default()` é vazio. Testes usam fixtures sintéticas em `crates/game/tests/fixtures/`. As verificações contra os arquivos reais (raiz do rig, clips vs. biblioteca de animação, arquivos do catálogo) passaram para `resort-game-assets` (`test_assets_consistency.py`).
+
+## Atualização (24/10/2026): tier `lazy` sob demanda e validade
+- O app baixa de início só o tier `core` (corpo base, animações, paleta e catálogos). Peças de roupa, móveis, miniaturas e áudio são `lazy`: o `CdnReader` pede o arquivo à thread de sincronização na primeira leitura, espera a chegada e repete o pedido após 30 s se falhar.
+- Cada arquivo `lazy` traz `ttl_days` no manifest: 7 para `furniture/`, 30 para `characters/parts/`, `ui/thumbs/` e `audio/`. Arquivos `core` não expiram. A validade conta desde o último uso (a leitura renova o `mtime` se tiver mais de um dia) e `prune_expired` apaga o que passou do prazo.
+- A lista de roupas vem do servidor: `get_catalogs` roda junto da verificação de conta (login e restauração de sessão), antes de o criador abrir. O cache por servidor e o `characters/catalog.json` da CDN continuam como reserva.
+- No criador, trocar só cores repinta as peças já carregadas em vez de recriar o avatar; as cenas das peças já vistas ficam retidas para não reler o `.glb` ao voltar a uma peça.

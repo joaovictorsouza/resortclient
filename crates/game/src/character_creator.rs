@@ -492,6 +492,7 @@ fn spawn_preview_avatar(
         });
 }
 
+#[allow(clippy::too_many_arguments)]
 fn sync_avatar_preview_model(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -499,18 +500,43 @@ fn sync_avatar_preview_model(
     state: Res<CharacterCreatorState>,
     mut last_appearance: Local<Option<AvatarAppearance>>,
     preview_query: Query<Entity, With<AvatarPreviewRoot>>,
+    children_query: Query<&Children>,
+    mut parts: Query<(
+        Entity,
+        &crate::avatar::AvatarPartSlot,
+        &mut crate::avatar::AvatarPartTint,
+    )>,
 ) {
     // Only re-spawn when appearance actually changes AFTER setup
     // (setup already spawned the first avatar)
     if last_appearance.as_ref() == Some(&state.appearance) {
         return;
     }
-    // Skip very first run — setup_creator_screen already spawned the avatar
-    if last_appearance.is_none() {
-        *last_appearance = Some(state.appearance.clone());
+    // Skip very first run: setup_creator_screen already spawned the avatar
+    let Some(previous) = last_appearance.replace(state.appearance.clone()) else {
+        return;
+    };
+
+    // Only colors changed: repaint the parts that are already loaded instead of reloading the avatar.
+    if crate::avatar::same_parts(&previous, &state.appearance) {
+        for root in preview_query.iter() {
+            let mut stack = vec![root];
+            while let Some(entity) = stack.pop() {
+                if let Ok((_, slot, mut tint)) = parts.get_mut(entity)
+                    && let Some(color) = crate::avatar::slot_color(&state.appearance, slot.0)
+                {
+                    tint.color = color;
+                    commands
+                        .entity(entity)
+                        .remove::<crate::avatar::PartTintApplied>();
+                }
+                if let Ok(children) = children_query.get(entity) {
+                    stack.extend(children.iter());
+                }
+            }
+        }
         return;
     }
-    *last_appearance = Some(state.appearance.clone());
 
     for entity in preview_query.iter() {
         commands.entity(entity).despawn();

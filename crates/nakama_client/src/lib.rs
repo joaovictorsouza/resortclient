@@ -79,12 +79,14 @@ impl NakamaClientHandle {
     }
 }
 
-/// Outcome of the account check: the nickname status and the refresh token to save for the next
-/// launch (absent if the server did not return one).
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Outcome of the account check: the nickname status, the refresh token to save for the next
+/// launch (absent if the server did not return one) and the catalogs, fetched in the same pass so the
+/// character creator already has the clothing list (absent if that request failed).
+#[derive(Debug, Clone, PartialEq)]
 pub struct AccountCheck {
     pub status: ProfileStatus,
     pub refresh_token: Option<String>,
+    pub catalogs: Option<protocol::GetCatalogsResponse>,
 }
 
 /// Runs `auth` against the REST client on its own thread, then reads the profile status with the
@@ -94,6 +96,7 @@ fn spawn_account_check<F>(
     host: String,
     port: u16,
     server_key: String,
+    catalog_version: String,
     auth: F,
 ) -> Receiver<Result<AccountCheck, String>>
 where
@@ -120,9 +123,16 @@ where
                             .get_profile_status(&auth.token)
                             .await
                             .map_err(|e| format!("Profile error: {e}"))?;
+                        // Best effort: the creator falls back to the cached or CDN catalog.
+                        let catalogs = rest
+                            .get_catalogs(&auth.token, &catalog_version)
+                            .await
+                            .map_err(|e| eprintln!("get_catalogs after login failed: {e}"))
+                            .ok();
                         Ok(AccountCheck {
                             status,
                             refresh_token: auth.refresh_token,
+                            catalogs,
                         })
                     })
                 });
@@ -142,14 +152,22 @@ pub fn check_google_account(
     port: u16,
     server_key: String,
     id_token: String,
+    catalog_version: String,
 ) -> Receiver<Result<AccountCheck, String>> {
-    spawn_account_check("nakama-google-check", host, port, server_key, move |rest| {
-        Box::pin(async move {
-            rest.authenticate_google(&id_token)
-                .await
-                .map_err(|e| format!("Auth error: {e}"))
-        })
-    })
+    spawn_account_check(
+        "nakama-google-check",
+        host,
+        port,
+        server_key,
+        catalog_version,
+        move |rest| {
+            Box::pin(async move {
+                rest.authenticate_google(&id_token)
+                    .await
+                    .map_err(|e| format!("Auth error: {e}"))
+            })
+        },
+    )
 }
 
 /// Restores a saved Google login from its refresh token, skipping the login screen. Same outcome
@@ -159,12 +177,14 @@ pub fn restore_session(
     port: u16,
     server_key: String,
     refresh_token: String,
+    catalog_version: String,
 ) -> Receiver<Result<AccountCheck, String>> {
     spawn_account_check(
         "nakama-session-restore",
         host,
         port,
         server_key,
+        catalog_version,
         move |rest| {
             Box::pin(async move {
                 rest.refresh_session(&refresh_token)

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use avian3d::prelude::*;
 use bevy::ecs::world::EntityWorldMut;
@@ -143,8 +143,51 @@ pub struct AvatarTintPlugin;
 
 impl Plugin for AvatarTintPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, apply_part_tints);
+        app.init_resource::<RetainedParts>()
+            .add_systems(Update, (apply_part_tints, retain_part_scenes));
     }
+}
+
+/// Keeps every part scene that was ever shown loaded. Without it, dropping a part (the player tries
+/// another hat) unloads its glTF and picking it again parses the file once more, which takes seconds on
+/// a phone. There are a few dozen small parts, so keeping them costs little.
+#[derive(Resource, Default)]
+struct RetainedParts(HashMap<bevy::asset::UntypedAssetId, bevy::asset::UntypedHandle>);
+
+fn retain_part_scenes(
+    mut retained: ResMut<RetainedParts>,
+    parts: Query<&WorldAssetRoot, Added<WorldAssetRoot>>,
+) {
+    for root in &parts {
+        retained
+            .0
+            .entry(root.0.id().untyped())
+            .or_insert_with(|| root.0.clone().untyped());
+    }
+}
+
+/// The color the player picked for a slot, when the slot is painted.
+pub fn slot_color(appearance: &AvatarAppearance, slot: &str) -> Option<Color> {
+    let hex = match slot {
+        "body" => &appearance.skin_color,
+        "hair" => &appearance.hair_color,
+        "top" => &appearance.top_color,
+        "bottom" => &appearance.bottom_color,
+        "shoes" => &appearance.shoes_color,
+        _ => return None,
+    };
+    Some(parse_hex_color(hex))
+}
+
+/// True when two appearances use the same parts and differ at most in colors: the avatar can be
+/// repainted in place instead of being rebuilt.
+pub fn same_parts(a: &AvatarAppearance, b: &AvatarAppearance) -> bool {
+    a.face_id == b.face_id
+        && a.hair_id == b.hair_id
+        && a.top_id == b.top_id
+        && a.bottom_id == b.bottom_id
+        && a.shoes_id == b.shoes_id
+        && a.accessories == b.accessories
 }
 
 struct AvatarSpawnData<'a> {
@@ -168,6 +211,10 @@ pub struct AvatarPartTint {
     pub color: Color,
 }
 
+/// Which slot of the avatar a part fills (`body`, `hair`, `top`, `bottom`, `shoes`...).
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AvatarPartSlot(pub &'static str);
+
 /// Marks a part scene whose materials were already tinted.
 #[derive(Component)]
 pub(crate) struct PartTintApplied;
@@ -185,24 +232,28 @@ pub fn spawn_appearance_parts(
     catalog: &CharacterCatalog,
     appearance: &AvatarAppearance,
 ) {
-    let spawn_part =
-        |parent: &mut ChildSpawnerCommands, path: &str, tint: Option<AvatarPartTint>| {
-            let mut entity = parent.spawn((
-                WorldAssetRoot(
-                    asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.to_string())),
-                ),
-                Transform::default(),
-                Visibility::default(),
-            ));
-            if let Some(tint) = tint {
-                entity.insert(tint);
-            }
-            entity.id()
-        };
+    let spawn_part = |parent: &mut ChildSpawnerCommands,
+                      slot: &'static str,
+                      path: &str,
+                      tint: Option<AvatarPartTint>| {
+        let mut entity = parent.spawn((
+            WorldAssetRoot(
+                asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.to_string())),
+            ),
+            AvatarPartSlot(slot),
+            Transform::default(),
+            Visibility::default(),
+        ));
+        if let Some(tint) = tint {
+            entity.insert(tint);
+        }
+        entity.id()
+    };
 
     // Body (skin tinted); its skeleton animates the whole avatar.
     let body = spawn_part(
         parent,
+        "body",
         BODY_FILE,
         Some(AvatarPartTint {
             color: parse_hex_color(&appearance.skin_color),
@@ -229,13 +280,13 @@ pub fn spawn_appearance_parts(
         let tint = color.filter(|_| item.tint).map(|hex| AvatarPartTint {
             color: parse_hex_color(hex),
         });
-        let part = spawn_part(parent, &item.asset_path, tint);
+        let part = spawn_part(parent, category, &item.asset_path, tint);
         parent.commands().entity(part).insert(AvatarClothingPart);
     }
 
     for id in &appearance.accessories {
         if let Some(item) = resolve_part_id(&catalog.items, "accessory", id) {
-            let part = spawn_part(parent, &item.asset_path, None);
+            let part = spawn_part(parent, "accessory", &item.asset_path, None);
             parent.commands().entity(part).insert(AvatarClothingPart);
         }
     }
