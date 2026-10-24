@@ -10,7 +10,7 @@ use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
 use bevy::winit::WINIT_WINDOWS;
 use objc2_ui_kit::UIViewController;
-use winit::platform::ios::WindowExtIOS;
+use winit::platform::ios::{ValidOrientations, WindowExtIOS};
 use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
 
 pub struct IosWindowPlugin;
@@ -49,6 +49,10 @@ fn configure_window(
         let Some(window) = winit_windows.get_window(entity) else {
             return;
         };
+        if current == 0 {
+            // winit's view controller allows every orientation on an iPad; the keyboard follows it.
+            window.set_valid_orientations(ValidOrientations::Landscape);
+        }
         if should_apply(current) {
             window.set_prefers_status_bar_hidden(true);
             window.set_prefers_home_indicator_hidden(true);
