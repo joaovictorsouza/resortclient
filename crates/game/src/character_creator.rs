@@ -265,6 +265,7 @@ impl Plugin for CharacterCreatorPlugin {
                 (
                     handle_mouse_drag_rotation,
                     sync_avatar_preview_model,
+                    retire_replaced_previews,
                     update_avatar_preview_transform,
                     sync_creator_ui,
                     sync_creator_mode,
@@ -472,7 +473,7 @@ fn spawn_preview_avatar(
     catalog: &CharacterCatalog,
     appearance: &AvatarAppearance,
     rotation_y: f32,
-) {
+) -> Entity {
     commands
         .spawn((
             AvatarPreviewRoot,
@@ -489,17 +490,42 @@ fn spawn_preview_avatar(
         ))
         .with_children(|parent| {
             spawn_appearance_parts(parent, asset_server, catalog, appearance);
-        });
+        })
+        .id()
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The preview avatars this one takes over from. They stay on screen until the new avatar is shown,
+/// so picking a part that still has to download never leaves the screen empty.
+#[derive(Component)]
+struct ReplacesPreview(Vec<Entity>);
+
+fn retire_replaced_previews(
+    mut commands: Commands,
+    ready: Query<(Entity, &ReplacesPreview), Without<crate::avatar_anim::HiddenUntilPosed>>,
+) {
+    for (entity, replaces) in ready.iter() {
+        for old in &replaces.0 {
+            commands.entity(*old).try_despawn();
+        }
+        commands.entity(entity).remove::<ReplacesPreview>();
+    }
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn sync_avatar_preview_model(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     catalog: Res<CharacterCatalog>,
     state: Res<CharacterCreatorState>,
     mut last_appearance: Local<Option<AvatarAppearance>>,
-    preview_query: Query<Entity, With<AvatarPreviewRoot>>,
+    preview_query: Query<
+        (
+            Entity,
+            Has<crate::avatar_anim::HiddenUntilPosed>,
+            Option<&ReplacesPreview>,
+        ),
+        With<AvatarPreviewRoot>,
+    >,
     children_query: Query<&Children>,
     mut parts: Query<(
         Entity,
@@ -519,7 +545,7 @@ fn sync_avatar_preview_model(
 
     // Only colors changed: repaint the parts that are already loaded instead of reloading the avatar.
     if crate::avatar::same_parts(&previous, &state.appearance) {
-        for root in preview_query.iter() {
+        for (root, _, _) in preview_query.iter() {
             let mut stack = vec![root];
             while let Some(entity) = stack.pop() {
                 if let Ok((_, slot, mut tint)) = parts.get_mut(entity)
@@ -538,18 +564,28 @@ fn sync_avatar_preview_model(
         return;
     }
 
-    for entity in preview_query.iter() {
-        commands.entity(entity).despawn();
+    // Keep what is on screen until the new avatar is ready. An avatar that was never shown (the player
+    // changed again while it loaded) is dropped, and the new one takes over from whatever it replaced.
+    let mut replaces = Vec::new();
+    for (entity, hidden, replaced) in preview_query.iter() {
+        if hidden {
+            commands.entity(entity).despawn();
+            replaces.extend(replaced.into_iter().flat_map(|r| r.0.iter().copied()));
+        } else {
+            replaces.push(entity);
+        }
     }
 
-    spawn_preview_avatar(
+    let new_root = spawn_preview_avatar(
         &mut commands,
         &asset_server,
         &catalog,
         &state.appearance,
         state.rotation_y,
     );
+    commands.entity(new_root).insert(ReplacesPreview(replaces));
 }
+
 // ---------------------------------------------------------------------------
 // Option panel
 // ---------------------------------------------------------------------------

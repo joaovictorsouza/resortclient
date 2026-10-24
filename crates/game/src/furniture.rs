@@ -646,6 +646,16 @@ fn handle_ghost_preview(
         return;
     }
 
+    // Release latch from UI button click once the pointer is up. This runs before the pointer is read:
+    // on a touch screen there is no pointer while no finger is down, and the latch would never clear.
+    if build_state.skip_first_click
+        && !mouse_button.pressed(MouseButton::Left)
+        && touches.iter().next().is_none()
+        && touches.iter_just_released().next().is_none()
+    {
+        build_state.skip_first_click = false;
+    }
+
     let (pointer, confirmed) = build_pointer(window, &mouse_button, &touches);
     let Some(cursor_pos) = pointer else {
         return;
@@ -742,15 +752,6 @@ fn handle_ghost_preview(
             MeshMaterial3d(mat),
             Transform::from_translation(world_pos),
         ));
-    }
-
-    // Release latch from UI button click if mouse was still down
-    if build_state.skip_first_click
-        && !mouse_button.pressed(MouseButton::Left)
-        && touches.iter().next().is_none()
-        && touches.iter_just_released().next().is_none()
-    {
-        build_state.skip_first_click = false;
     }
 
     let is_over_ui = ui_interaction
