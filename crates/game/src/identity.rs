@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
+use crate::catalog_sync::NetCatalogsLoadedEvent;
 use crate::config::GameConfig;
 use crate::google_signin::{GoogleSignInError, GoogleSignInResult, request_google_id_token_for};
 use crate::state::AppState;
@@ -217,11 +218,15 @@ fn check_auth_status(
     mut config: ResMut<GameConfig>,
     mut restore: ResMut<SessionRestore>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut catalogs_loaded: MessageWriter<NetCatalogsLoadedEvent>,
 ) {
     if let Some(pending) = &restore.pending {
         match pending.try_recv() {
             Ok(Ok(check)) => {
                 restore.pending = None;
+                if let Some(catalogs) = check.catalogs.clone() {
+                    catalogs_loaded.write(NetCatalogsLoadedEvent(catalogs));
+                }
                 config.refresh_token = check.refresh_token.or(config.refresh_token.take());
                 next_state.set(apply_profile_status(&check.status, &mut config));
             }
@@ -250,6 +255,7 @@ fn check_auth_status(
             config.port,
             config.server_key.clone(),
             refresh_token,
+            crate::catalog_sync::cached_version(&config),
         ));
     } else if config.needs_nickname_setup {
         next_state.set(AppState::Login);
@@ -485,11 +491,15 @@ fn poll_google_sign_in(
     mut state: ResMut<LoginState>,
     mut config: ResMut<GameConfig>,
     mut next_state: ResMut<NextState<AppState>>,
+    mut catalogs_loaded: MessageWriter<NetCatalogsLoadedEvent>,
 ) {
     if let Some(checking) = &state.checking {
         match checking.try_recv() {
             Ok(Ok(check)) => {
                 state.checking = None;
+                if let Some(catalogs) = check.catalogs.clone() {
+                    catalogs_loaded.write(NetCatalogsLoadedEvent(catalogs));
+                }
                 config.refresh_token = check.refresh_token;
                 next_state.set(apply_profile_status(&check.status, &mut config));
             }
@@ -527,6 +537,7 @@ fn poll_google_sign_in(
                     config.port,
                     config.server_key.clone(),
                     id_token,
+                    crate::catalog_sync::cached_version(&config),
                 ));
             }
             None => next_state.set(AppState::ChooseNickname),

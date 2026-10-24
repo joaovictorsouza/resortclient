@@ -6,12 +6,17 @@
 //! the path is in neither place yet but the download is still running, the read waits for it, so
 //! load sites keep using plain logical paths and never race the CDN.
 //!
-//! A background thread keeps the cache in sync (`nakama_client::asset_cache::sync_blocking`); the
-//! game waits for the core tier on the start screen (see [`cdn_settled`]).
+//! A background thread keeps the cache in sync (`nakama_client::asset_cache::sync_blocking`). The
+//! `core` tier (avatar body, animations, catalogs) is downloaded on the start screen (see
+//! [`cdn_settled`]). Everything else is `lazy`: the first read of a logical path that is in the manifest
+//! but not on disk asks the thread to download it (clothing when the player picks it, furniture when a
+//! room needs it), and later reads hit the cache. Files unused for their `ttl_days` are dropped.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use bevy::asset::io::{
     AssetReader, AssetReaderError, AssetSource, AssetSourceBuilder, AssetSourceId,
@@ -36,7 +41,11 @@ pub struct CdnReader {
 }
 
 /// How often a waiting read re-checks the cache.
-const WAIT_STEP: std::time::Duration = std::time::Duration::from_millis(100);
+const WAIT_STEP: Duration = Duration::from_millis(100);
+
+/// A lazy file that was requested and has not arrived is requested again after this long (a failed
+/// download, or a sync thread that was restarted).
+const REQUEST_RETRY: Duration = Duration::from_secs(30);
 
 impl CdnReader {
     pub fn new(inner: Box<dyn ErasedAssetReader>, index: CdnIndex) -> Self {
@@ -68,12 +77,16 @@ impl AssetReader for CdnReader {
             if let Some(file) = self.cached_file(path)
                 && let Ok(bytes) = std::fs::read(&file)
             {
+                asset_cache::touch_if_stale(&file);
                 let reader: Box<dyn Reader + 'a> = Box::new(VecReader::new(bytes));
                 return Ok(reader);
             }
             match self.inner.read(path).await {
                 Err(AssetReaderError::NotFound(_))
-                    if self.cdn.as_ref().is_some_and(CdnAssets::may_still_deliver) =>
+                    if self.cdn.as_ref().is_some_and(|cdn| {
+                        path.to_str()
+                            .is_some_and(|p| cdn.wait_for(&p.replace('\\', "/")))
+                    }) =>
                 {
                     async_io::Timer::after(WAIT_STEP).await;
                 }
@@ -109,10 +122,8 @@ pub enum CdnStatus {
         done: usize,
         total: usize,
     },
-    /// Core assets are available; lazy ones may still be downloading.
+    /// Core assets are available; lazy ones are downloaded when asked for.
     Ready,
-    /// Every file of the manifest has been handled.
-    Complete,
     /// The core tier could not be completed (offline, bad manifest...). The sync is retried with a
     /// backoff and the start screen keeps waiting: there is nothing embedded to fall back to.
     Failed(String),
@@ -121,7 +132,7 @@ pub enum CdnStatus {
 impl CdnStatus {
     /// True once the game can start: the core tier is on disk, or the CDN is not in use.
     pub fn is_settled(&self) -> bool {
-        matches!(self, Self::Disabled | Self::Ready | Self::Complete)
+        matches!(self, Self::Disabled | Self::Ready)
     }
 }
 
@@ -129,6 +140,13 @@ impl CdnStatus {
 pub struct CdnAssets {
     pub index: CdnIndex,
     pub status: Arc<Mutex<CdnStatus>>,
+    /// Queue of lazy files for the sync thread (absent while no thread runs).
+    requests: Arc<Mutex<Option<crossbeam_channel::Sender<String>>>>,
+    /// Logical names the manifest lists; set once the manifest is known.
+    known: Arc<RwLock<HashSet<String>>>,
+    listed: Arc<AtomicBool>,
+    /// Lazy files already requested, and when.
+    pending: Arc<Mutex<HashMap<String, Instant>>>,
 }
 
 impl CdnAssets {
@@ -136,10 +154,41 @@ impl CdnAssets {
         self.status.lock().map(|s| s.clone()).unwrap_or_default()
     }
 
-    /// A file that is in neither the cache nor the bundle may still show up: the sync is running
-    /// or about to be retried. Only a finished (or disabled) CDN is final.
-    pub fn may_still_deliver(&self) -> bool {
-        !matches!(self.status(), CdnStatus::Disabled | CdnStatus::Complete)
+    /// Whether a read of `name` that was found nowhere should keep waiting. It does while the manifest
+    /// is not known yet, and for a manifest file that is not on disk yet (which it requests). A name
+    /// the manifest does not list, or a CDN that is not in use, ends the wait.
+    pub fn wait_for(&self, name: &str) -> bool {
+        if matches!(self.status(), CdnStatus::Disabled) {
+            return false;
+        }
+        if !self.listed.load(Ordering::Acquire) {
+            return true;
+        }
+        let known = self.known.read().is_ok_and(|k| k.contains(name));
+        if known {
+            self.request(name);
+        }
+        known
+    }
+
+    /// Asks the sync thread to download `name` unless that was asked recently.
+    pub fn request(&self, name: &str) {
+        let now = Instant::now();
+        let Ok(mut pending) = self.pending.lock() else {
+            return;
+        };
+        if pending
+            .get(name)
+            .is_some_and(|at| now.duration_since(*at) < REQUEST_RETRY)
+        {
+            return;
+        }
+        if let Ok(sender) = self.requests.lock()
+            && let Some(sender) = sender.as_ref()
+            && sender.send(name.to_string()).is_ok()
+        {
+            pending.insert(name.to_string(), now);
+        }
     }
 
     fn set_status(&self, status: CdnStatus) {
@@ -151,7 +200,16 @@ impl CdnAssets {
     /// Applies one worker event; separated from the thread so it can be tested.
     pub fn apply(&self, event: SyncEvent) {
         match event {
+            SyncEvent::Listed(names) => {
+                if let Ok(mut known) = self.known.write() {
+                    *known = names.into_iter().collect();
+                }
+                self.listed.store(true, Ordering::Release);
+            }
             SyncEvent::FileReady { name, path } => {
+                if let Ok(mut pending) = self.pending.lock() {
+                    pending.remove(&name);
+                }
                 if let Ok(mut index) = self.index.write() {
                     index.insert(name, path);
                 }
@@ -163,7 +221,9 @@ impl CdnAssets {
                 self.set_status(CdnStatus::Syncing { done, total })
             }
             SyncEvent::CoreReady => self.set_status(CdnStatus::Ready),
-            SyncEvent::Finished => self.set_status(CdnStatus::Complete),
+            SyncEvent::LazyFailed { name, reason } => {
+                warn!("CDN asset {name} could not be downloaded, will retry: {reason}")
+            }
             SyncEvent::Failed(reason) => self.set_status(CdnStatus::Failed(reason)),
         }
     }
@@ -287,11 +347,19 @@ fn spawn_sync(cdn: &CdnAssets, config: &GameConfig) {
     };
     info!("CDN assets: syncing {url} into {}", dir.display());
     cdn.set_status(CdnStatus::Syncing { done: 0, total: 0 });
+    // A new thread gets a new queue; what was asked of the old one is asked again.
+    let (tx, rx) = crossbeam_channel::unbounded();
+    if let Ok(mut requests) = cdn.requests.lock() {
+        *requests = Some(tx);
+    }
+    if let Ok(mut pending) = cdn.pending.lock() {
+        pending.clear();
+    }
     let spawned = std::thread::Builder::new()
         .name("cdn-assets".into())
         .spawn({
             let cdn = cdn.clone();
-            move || asset_cache::sync_blocking(&url, &dir, |event| cdn.apply(event))
+            move || asset_cache::sync_blocking(&url, &dir, rx, |event| cdn.apply(event))
         });
     if let Err(e) = spawned {
         cdn.set_status(CdnStatus::Failed(format!("thread: {e}")));
@@ -435,11 +503,6 @@ mod tests {
             cdn.index.read().unwrap()["x.glb"],
             PathBuf::from("/c/x.1.glb")
         );
-        assert!(cdn.may_still_deliver());
-        cdn.apply(SyncEvent::Finished);
-        assert_eq!(cdn.status(), CdnStatus::Complete);
-        assert!(cdn.status().is_settled());
-        assert!(!cdn.may_still_deliver());
     }
 
     #[test]
@@ -447,8 +510,8 @@ mod tests {
         let cdn = CdnAssets::default();
         cdn.apply(SyncEvent::Failed("offline".into()));
         assert!(!cdn.status().is_settled());
-        // Reads keep waiting while the retries run.
-        assert!(cdn.may_still_deliver());
+        // Reads keep waiting while the retries run: the manifest is not known yet.
+        assert!(cdn.wait_for("anything.glb"));
         assert_eq!(retry_delay_secs(0), 5.0);
         assert_eq!(retry_delay_secs(1), 10.0);
         assert_eq!(retry_delay_secs(2), 20.0);
@@ -483,15 +546,70 @@ mod tests {
     }
 
     #[test]
-    fn a_read_gives_up_once_nothing_more_can_arrive() {
+    fn a_read_gives_up_on_names_the_manifest_does_not_list() {
         let bundle = temp_dir("giveup-bundle");
         let cdn = CdnAssets::default();
-        cdn.apply(SyncEvent::Finished);
+        cdn.apply(SyncEvent::Listed(vec!["known.glb".into()]));
         let reader = waiting_reader(&bundle, &cdn);
         assert!(matches!(
             read_all(&reader, "never.glb"),
             Err(AssetReaderError::NotFound(_))
         ));
+        // A disabled CDN never waits either, listed or not.
+        let off = CdnAssets::default();
+        off.set_status(CdnStatus::Disabled);
+        assert!(!off.wait_for("never.glb"));
+    }
+
+    #[test]
+    fn reading_a_listed_lazy_file_requests_it_once_and_waits_for_it() {
+        let bundle = temp_dir("lazy-bundle");
+        let cache = temp_dir("lazy-cache");
+        std::fs::write(cache.join("hat.1.glb"), b"hat").unwrap();
+        let cdn = CdnAssets::default();
+        let (tx, rx) = crossbeam_channel::unbounded();
+        *cdn.requests.lock().unwrap() = Some(tx);
+        cdn.apply(SyncEvent::Listed(vec!["parts/hat.glb".into()]));
+        cdn.apply(SyncEvent::CoreReady);
+        let reader = waiting_reader(&bundle, &cdn);
+
+        // The "sync thread": answers the request a little later.
+        let worker = {
+            let cdn = cdn.clone();
+            let cached = cache.join("hat.1.glb");
+            std::thread::spawn(move || {
+                let asked = rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert_eq!(asked, "parts/hat.glb");
+                std::thread::sleep(Duration::from_millis(250));
+                cdn.apply(SyncEvent::FileReady {
+                    name: asked,
+                    path: cached,
+                });
+                // The reader polls every 100 ms but must not have asked a second time.
+                assert!(rx.try_recv().is_err());
+            })
+        };
+        assert_eq!(read_all(&reader, "parts/hat.glb").unwrap(), b"hat");
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn a_request_is_repeated_only_after_the_retry_window() {
+        let cdn = CdnAssets::default();
+        let (tx, rx) = crossbeam_channel::unbounded();
+        *cdn.requests.lock().unwrap() = Some(tx);
+        cdn.request("a.glb");
+        cdn.request("a.glb");
+        assert_eq!(rx.try_iter().count(), 1);
+        // Backdate the first request: it is considered lost and sent again.
+        *cdn.pending.lock().unwrap().get_mut("a.glb").unwrap() =
+            Instant::now() - REQUEST_RETRY - Duration::from_secs(1);
+        cdn.request("a.glb");
+        assert_eq!(rx.try_iter().count(), 1);
+        // Without a sync thread nothing is sent and nothing is remembered.
+        let idle = CdnAssets::default();
+        idle.request("b.glb");
+        assert!(idle.pending.lock().unwrap().is_empty());
     }
 
     #[test]

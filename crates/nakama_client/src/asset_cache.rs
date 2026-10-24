@@ -42,6 +42,9 @@ pub struct ManifestFile {
     /// Present for furniture models.
     #[serde(default)]
     pub model: Option<ModelMeta>,
+    /// Days a lazy file may stay in the cache without being used (absent: kept while the manifest lists it).
+    #[serde(default)]
+    pub ttl_days: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -49,7 +52,7 @@ pub struct ManifestFile {
 pub enum Tier {
     /// Downloaded before the player enters the game.
     Core,
-    /// Downloaded on demand.
+    /// Downloaded when something asks for it, and dropped after `ttl_days` without use.
     #[default]
     Lazy,
 }
@@ -129,6 +132,42 @@ pub fn missing<'a>(
         .filter(|(_, f)| !is_cached(cache_dir, f))
         .map(|(name, f)| (name.as_str(), f))
         .collect()
+}
+
+const DAY: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+
+/// Marks a cached file as used now. Cheap enough to call on every read: the modification time is only
+/// rewritten when it is more than a day old, which is all the resolution the expiry needs.
+pub fn touch_if_stale(path: &Path) {
+    let stale = std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age >= DAY);
+    if stale && let Ok(file) = std::fs::OpenOptions::new().write(true).open(path) {
+        let _ = file.set_modified(std::time::SystemTime::now());
+    }
+}
+
+/// Deletes lazy files that were not used for their `ttl_days`. The modification time is the last use
+/// (a download sets it, [`touch_if_stale`] refreshes it). Returns how many files were removed.
+pub fn prune_expired(manifest: &Manifest, cache_dir: &Path, now: std::time::SystemTime) -> usize {
+    let mut removed = 0;
+    for file in manifest.files.values() {
+        let Some(days) = file.ttl_days.filter(|_| file.tier == Tier::Lazy) else {
+            continue;
+        };
+        let path = cache_file(cache_dir, file);
+        let expired = std::fs::metadata(&path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|used| now.duration_since(used).ok())
+            .is_some_and(|idle| idle >= DAY * days);
+        if expired && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 /// Deletes cached files the manifest no longer references (old versions). Returns how many were removed.
@@ -230,6 +269,8 @@ pub async fn sync_tier(
 pub enum SyncEvent {
     /// A cached file is valid and can be served: logical name and absolute path.
     FileReady { name: String, path: PathBuf },
+    /// Every logical name the manifest lists (cached or not): what can still be requested.
+    Listed(Vec<String>),
     /// A furniture model announced by the manifest (logical path and bounds).
     Model {
         name: String,
@@ -240,9 +281,9 @@ pub enum SyncEvent {
     Progress { done: usize, total: usize },
     /// Every core file is present; the game may start.
     CoreReady,
-    /// Lazy files finished (or failed; they are best effort).
-    Finished,
-    /// The core tier could not be completed (offline, bad manifest...). Embedded assets stay in use.
+    /// A requested lazy file could not be downloaded; asking again retries it.
+    LazyFailed { name: String, reason: String },
+    /// The core tier could not be completed (offline, bad manifest...).
     Failed(String),
 }
 
@@ -251,9 +292,16 @@ const HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Synchronizes the cache with the CDN on a throwaway runtime; call it from a dedicated thread.
 ///
-/// Order: fetch the manifest (or fall back to the last saved copy), announce every valid cached file,
-/// download the missing `core` files, announce [`SyncEvent::CoreReady`], then fetch the lazy tier.
-pub fn sync_blocking(manifest_url: &str, cache_dir: &Path, mut emit: impl FnMut(SyncEvent)) {
+/// Order: fetch the manifest (or fall back to the last saved copy), drop expired and unreferenced files,
+/// announce every valid cached file, download the missing `core` files and announce
+/// [`SyncEvent::CoreReady`]. Lazy files are then downloaded one at a time as their logical names
+/// arrive on `requests`; the function returns when the sender is dropped.
+pub fn sync_blocking(
+    manifest_url: &str,
+    cache_dir: &Path,
+    requests: crossbeam_channel::Receiver<String>,
+    mut emit: impl FnMut(SyncEvent),
+) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -286,6 +334,10 @@ pub fn sync_blocking(manifest_url: &str, cache_dir: &Path, mut emit: impl FnMut(
         };
         let base_url = base_of(manifest_url);
 
+        let _ = prune_except(&manifest, cache_dir);
+        prune_expired(&manifest, cache_dir, std::time::SystemTime::now());
+
+        emit(SyncEvent::Listed(manifest.files.keys().cloned().collect()));
         for (name, file) in &manifest.files {
             if let Some(model) = file.model {
                 emit(SyncEvent::Model {
@@ -294,7 +346,8 @@ pub fn sync_blocking(manifest_url: &str, cache_dir: &Path, mut emit: impl FnMut(
                     bottom: model.bottom,
                 });
             }
-            if is_cached(cache_dir, file) {
+            // Lazy files are checked when they are asked for; only core ones are needed up front.
+            if file.tier == Tier::Core && is_cached(cache_dir, file) {
                 emit(SyncEvent::FileReady {
                     name: name.clone(),
                     path: cache_file(cache_dir, file),
@@ -316,19 +369,25 @@ pub fn sync_blocking(manifest_url: &str, cache_dir: &Path, mut emit: impl FnMut(
         }
         emit(SyncEvent::CoreReady);
 
-        for (name, file) in missing(&manifest, cache_dir, Some(Tier::Lazy)) {
-            if download_file(&http, &base_url, cache_dir, name, file)
-                .await
-                .is_ok()
+        // Lazy files on demand. Blocking here is fine: this runtime exists only for this loop.
+        while let Ok(name) = requests.recv() {
+            let Some(file) = manifest.files.get(&name) else {
+                continue;
+            };
+            if !is_cached(cache_dir, file)
+                && let Err(e) = download_file(&http, &base_url, cache_dir, &name, file).await
             {
-                emit(SyncEvent::FileReady {
-                    name: name.to_string(),
-                    path: cache_file(cache_dir, file),
+                emit(SyncEvent::LazyFailed {
+                    name,
+                    reason: e.to_string(),
                 });
+                continue;
             }
+            emit(SyncEvent::FileReady {
+                path: cache_file(cache_dir, file),
+                name,
+            });
         }
-        let _ = prune_except(&manifest, cache_dir);
-        emit(SyncEvent::Finished);
     });
 }
 
@@ -422,6 +481,7 @@ mod tests {
             size: 5,
             tier: Tier::Lazy,
             model: None,
+            ttl_days: None,
         };
         let manifest = Manifest {
             manifest_version: 1,
@@ -449,6 +509,7 @@ mod tests {
             size: 1,
             tier: Tier::Lazy,
             model: None,
+            ttl_days: None,
         };
         let manifest = Manifest {
             manifest_version: 1,
@@ -518,15 +579,21 @@ mod tests {
         )
     }
 
-    fn run_sync(url: &str, dir: &Path) -> Vec<SyncEvent> {
+    /// Runs a whole sync; `requests` are the lazy files asked for after the core tier.
+    fn run_sync(url: &str, dir: &Path, requests: &[&str]) -> Vec<SyncEvent> {
         let events = Arc::new(Mutex::new(Vec::new()));
         let sink = events.clone();
-        sync_blocking(url, dir, move |e| sink.lock().unwrap().push(e));
+        let (tx, rx) = crossbeam_channel::unbounded();
+        for name in requests {
+            tx.send(name.to_string()).unwrap();
+        }
+        drop(tx); // the worker returns once the queue is drained
+        sync_blocking(url, dir, rx, move |e| sink.lock().unwrap().push(e));
         events.lock().unwrap().clone()
     }
 
     #[test]
-    fn sync_downloads_core_then_lazy_and_reuses_the_cache() {
+    fn sync_downloads_core_up_front_and_lazy_files_only_when_asked() {
         let (base, chair) = (b"base".as_slice(), b"chair".as_slice());
         let manifest = manifest_json(&[
             (
@@ -549,13 +616,22 @@ mod tests {
         let url = serve(files);
         let dir = temp_dir("e2e");
 
-        let events = run_sync(&format!("{url}/manifest.json"), &dir);
-        let core_at = events
-            .iter()
-            .position(|e| *e == SyncEvent::CoreReady)
-            .unwrap();
+        // Nothing asked for: the lazy file stays on the CDN.
+        let events = run_sync(&format!("{url}/manifest.json"), &dir, &[]);
+        assert!(events.contains(&SyncEvent::CoreReady));
         assert!(events.contains(&SyncEvent::Progress { done: 1, total: 1 }));
-        assert_eq!(events.last(), Some(&SyncEvent::Finished));
+        assert!(events.contains(&SyncEvent::Listed(vec![
+            "characters/base/base.glb".into(),
+            "furniture/chair.glb".into()
+        ])));
+        assert!(!dir.join("furniture/chair.2222.glb").exists());
+
+        // Asked for: downloaded, verified and announced after the core files.
+        let events = run_sync(
+            &format!("{url}/manifest.json"),
+            &dir,
+            &["furniture/chair.glb", "not/in/the/manifest.glb"],
+        );
         let ready: Vec<_> = events
             .iter()
             .filter_map(|e| match e {
@@ -564,20 +640,114 @@ mod tests {
             })
             .collect();
         assert_eq!(ready, ["characters/base/base.glb", "furniture/chair.glb"]);
-        assert!(matches!(&events[core_at - 1], SyncEvent::Progress { .. }));
         assert_eq!(
             std::fs::read(dir.join("furniture/chair.2222.glb")).unwrap(),
             chair
         );
-
-        // Second run: everything is cached, so nothing is downloaded (no Progress events).
-        let again = run_sync(&format!("{url}/manifest.json"), &dir);
+        // The core file was already on disk the second time: no download progress.
         assert!(
-            !again
+            !events
                 .iter()
                 .any(|e| matches!(e, SyncEvent::Progress { .. }))
         );
-        assert!(again.contains(&SyncEvent::CoreReady));
+    }
+
+    #[test]
+    fn a_failed_lazy_download_is_reported() {
+        let base = b"base".as_slice();
+        let manifest = manifest_json(&[
+            (
+                "characters/base/base.glb",
+                "characters/base/base.1111.glb",
+                base,
+                "core",
+            ),
+            (
+                "furniture/chair.glb",
+                "furniture/chair.2222.glb",
+                b"chair",
+                "lazy",
+            ),
+        ]);
+        let mut files = HashMap::new();
+        files.insert("/manifest.json".to_string(), manifest.into_bytes());
+        files.insert("/characters/base/base.1111.glb".to_string(), base.to_vec());
+        // The chair is 404 on the CDN.
+        let url = serve(files);
+        let dir = temp_dir("lazy-fail");
+        let events = run_sync(
+            &format!("{url}/manifest.json"),
+            &dir,
+            &["furniture/chair.glb"],
+        );
+        assert!(events.contains(&SyncEvent::CoreReady));
+        assert!(events.iter().any(
+            |e| matches!(e, SyncEvent::LazyFailed { name, .. } if name == "furniture/chair.glb")
+        ));
+    }
+
+    #[test]
+    fn unused_lazy_files_expire_but_core_and_recent_ones_stay() {
+        use std::time::{Duration, SystemTime};
+        let dir = temp_dir("expire");
+        std::fs::create_dir_all(dir.join("a")).unwrap();
+        let mk = |name: &str, tier: Tier, ttl: Option<u32>| {
+            let file = ManifestFile {
+                url: format!("a/{name}.1111.glb"),
+                sha256: sha256_hex(b"x"),
+                size: 1,
+                tier,
+                model: None,
+                ttl_days: ttl,
+            };
+            std::fs::write(cache_file(&dir, &file), b"x").unwrap();
+            (format!("a/{name}.glb"), file)
+        };
+        let manifest = Manifest {
+            manifest_version: 1,
+            assets_version: "v".into(),
+            min_app_version: String::new(),
+            files: BTreeMap::from([
+                mk("old_chair", Tier::Lazy, Some(7)),
+                mk("fresh_chair", Tier::Lazy, Some(7)),
+                mk("hat", Tier::Lazy, Some(30)),
+                mk("body", Tier::Core, None),
+            ]),
+        };
+        let now = SystemTime::now();
+        // Eight days idle: past the 7 day furniture limit, inside the 30 day clothing limit.
+        let in_eight_days = now + Duration::from_secs(8 * 24 * 3600);
+        assert_eq!(prune_expired(&manifest, &dir, in_eight_days), 2);
+        assert!(!dir.join("a/old_chair.1111.glb").exists());
+        assert!(!dir.join("a/fresh_chair.1111.glb").exists());
+        assert!(dir.join("a/hat.1111.glb").exists());
+        assert!(dir.join("a/body.1111.glb").exists());
+        // Thirty one days: the hat expires too, the core file never does.
+        let in_a_month = now + Duration::from_secs(31 * 24 * 3600);
+        assert_eq!(prune_expired(&manifest, &dir, in_a_month), 1);
+        assert!(dir.join("a/body.1111.glb").exists());
+    }
+
+    #[test]
+    fn touching_a_stale_file_renews_it() {
+        let dir = temp_dir("touch");
+        let path = dir.join("f.glb");
+        std::fs::write(&path, b"x").unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3 * 24 * 3600);
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        touch_if_stale(&path);
+        let age = std::fs::metadata(&path)
+            .unwrap()
+            .modified()
+            .unwrap()
+            .elapsed()
+            .unwrap();
+        assert!(age < std::time::Duration::from_secs(60), "{age:?}");
     }
 
     #[test]
@@ -598,7 +768,7 @@ mod tests {
         let url = serve(files);
         let dir = temp_dir("corrupt");
 
-        let events = run_sync(&format!("{url}/manifest.json"), &dir);
+        let events = run_sync(&format!("{url}/manifest.json"), &dir, &[]);
         assert!(matches!(events.last(), Some(SyncEvent::Failed(m)) if m.contains("hash mismatch")));
         assert!(!events.contains(&SyncEvent::CoreReady));
         assert!(!dir.join("characters/base/base.1111.glb").exists());
@@ -619,13 +789,13 @@ mod tests {
         let mut files = HashMap::new();
         files.insert("/manifest.json".to_string(), manifest.clone().into_bytes());
         let url = serve(files);
-        let events = run_sync(&format!("{url}/manifest.json"), &dir);
+        let events = run_sync(&format!("{url}/manifest.json"), &dir, &[]);
         assert!(matches!(events.last(), Some(SyncEvent::Failed(_))));
 
         // Now the file exists on disk and the server is unreachable: the saved manifest is used.
         std::fs::create_dir_all(dir.join("characters/base")).unwrap();
         std::fs::write(dir.join("characters/base/base.1111.glb"), body).unwrap();
-        let events = run_sync("http://127.0.0.1:9/manifest.json", &dir);
+        let events = run_sync("http://127.0.0.1:9/manifest.json", &dir, &[]);
         assert!(events.contains(&SyncEvent::CoreReady), "{events:?}");
     }
 }
