@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::net::{NakamaResource, send_move_request};
-use crate::room::{Tile, world_to_tile};
+use crate::room::{FLOOR_TILE_TOP, Tile, world_to_tile};
 use crate::state::AppState;
 
 pub struct InputPlugin;
@@ -100,8 +100,8 @@ pub(crate) fn handle_pointer_click_or_tap(
         return;
     };
 
-    // Calculate intersection with the ground plane Y = 0.1
-    let plane_y = 0.1;
+    // Calculate intersection with the walking surface plane
+    let plane_y = FLOOR_TILE_TOP;
     let normal = Vec3::Y;
     let denom = normal.dot(*ray.direction);
 
