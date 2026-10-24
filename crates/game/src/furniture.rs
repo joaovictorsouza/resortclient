@@ -14,7 +14,7 @@ use crate::net::{
     NakamaResource, NetBuildModeRejectedEvent, NetInventoryLoadedEvent, NetItemMovedEvent,
     NetItemPlacedEvent, NetItemRemovedEvent, NetItemRotatedEvent, NetRoomSnapshotEvent,
 };
-use crate::room::Tile;
+use crate::room::{FLOOR_TILE_TOP, Tile};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
@@ -47,9 +47,6 @@ pub fn calculate_occupied_tiles(
     tiles
 }
 
-/// Height of the top surface of the floor tiles (`Cuboid` of 0.2 centered at y = 0.1).
-pub const FLOOR_TILE_TOP: f32 = 0.2;
-
 /// Computes the world center position and mesh dimensions for a furniture piece.
 pub fn calculate_furniture_transform(
     x: i32,
@@ -61,10 +58,8 @@ pub fn calculate_furniture_transform(
     let height = if walkable { 0.04 } else { 0.8 };
     let center_x = x as f32 + (width as f32) / 2.0;
     let center_z = z as f32 + (depth as f32) / 2.0;
-    // Floor decorations lie on top of the floor tiles (whose top surface is at y = 0.2);
-    // solid furniture keeps standing from the avatar's ground level.
-    let base_y = if walkable { FLOOR_TILE_TOP } else { 0.1 };
-    let center_y = base_y + (height / 2.0);
+    // Everything rests on top of the floor tiles, which are only a subfloor.
+    let center_y = FLOOR_TILE_TOP + (height / 2.0);
 
     let position = Vec3::new(center_x, center_y, center_z);
     let size = Vec3::new(width as f32 * 0.94, height, depth as f32 * 0.94);
@@ -664,8 +659,8 @@ fn handle_ghost_preview(
         return;
     };
 
-    // Intersect plane Y = 0.1
-    let plane_y = 0.1;
+    // Intersect the walking surface plane
+    let plane_y = FLOOR_TILE_TOP;
     let normal = Vec3::Y;
     let denom = normal.dot(*ray.direction);
 
@@ -865,7 +860,7 @@ fn handle_furniture_picking_in_build_mode(
         return;
     };
 
-    let plane_y = 0.1;
+    let plane_y = FLOOR_TILE_TOP;
     let normal = Vec3::Y;
     let denom = normal.dot(*ray.direction);
     if denom.abs() < 1e-6 {
@@ -1245,9 +1240,9 @@ mod tests {
     fn floor_decorations_sit_on_top_of_the_floor_tiles() {
         let (pos, size) = calculate_furniture_transform(3, 4, 2, 2, true);
         assert!((pos.y - size.y / 2.0 - FLOOR_TILE_TOP).abs() < 1e-6);
-        // Solid furniture is unchanged.
+        // Solid furniture stands on the floor tiles too, not inside them.
         let (pos, size) = calculate_furniture_transform(3, 4, 1, 1, false);
-        assert!((pos.y - size.y / 2.0 - 0.1).abs() < 1e-6);
+        assert!((pos.y - size.y / 2.0 - FLOOR_TILE_TOP).abs() < 1e-6);
     }
 
     #[test]

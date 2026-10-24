@@ -173,8 +173,14 @@ impl Plugin for RoomPlugin {
     }
 }
 
+/// Thickness of the floor tile slab; it spans `y = 0..FLOOR_TILE_TOP`.
+pub const FLOOR_TILE_THICKNESS: f32 = 0.2;
+/// Height of the top surface of the floor tiles: the ground level for avatars and furniture.
+pub const FLOOR_TILE_TOP: f32 = FLOOR_TILE_THICKNESS;
+
+/// World position of a tile's walking surface (center of the tile, on top of the slab).
 pub fn tile_to_world(x: i32, z: i32) -> Vec3 {
-    Vec3::new(x as f32 + 0.5, 0.1, z as f32 + 0.5)
+    Vec3::new(x as f32 + 0.5, FLOOR_TILE_TOP, z as f32 + 0.5)
 }
 
 pub fn world_to_tile(pos: Vec3) -> (i32, i32) {
@@ -272,7 +278,7 @@ fn handle_room_snapshot(
         }
         commands.insert_resource(wall_materials);
 
-        let tile_mesh = meshes.add(Cuboid::new(0.96, 0.2, 0.96));
+        let tile_mesh = meshes.add(Cuboid::new(0.96, FLOOR_TILE_THICKNESS, 0.96));
 
         // Curated checkerboard tile palette (subtle modern aesthetic)
         let mat_tile_a = materials.add(StandardMaterial {
@@ -294,7 +300,9 @@ fn handle_room_snapshot(
 
                 let x_coord = x as i32;
                 let z_coord = z as i32;
-                let world_pos = tile_to_world(x_coord, z_coord);
+                // The slab is centered half its thickness below the walking surface.
+                let world_pos =
+                    tile_to_world(x_coord, z_coord) - Vec3::Y * (FLOOR_TILE_THICKNESS / 2.0);
 
                 let is_even = (x_coord + z_coord) % 2 == 0;
                 let material = if is_even {
@@ -312,7 +320,7 @@ fn handle_room_snapshot(
                     MeshMaterial3d(material),
                     Transform::from_translation(world_pos),
                     // Avian 3D collider for spatial raycasting and physics bounds
-                    Collider::cuboid(1.0, 0.2, 1.0),
+                    Collider::cuboid(1.0, FLOOR_TILE_THICKNESS, 1.0),
                 ));
             }
         }
@@ -415,6 +423,8 @@ mod tests {
         let world = tile_to_world(x, z);
         assert_eq!(world.x, 4.5);
         assert_eq!(world.z, 7.5);
+        // Avatars stand on top of the floor slab, not inside it.
+        assert_eq!(world.y, FLOOR_TILE_TOP);
 
         let (recovered_x, recovered_z) = world_to_tile(world);
         assert_eq!(recovered_x, x);
