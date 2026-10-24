@@ -290,11 +290,14 @@ pub enum SyncEvent {
 const MANIFEST_FILE: &str = "manifest.json";
 const HTTP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// How often the sync thread looks for new lazy requests while downloads run.
+const LAZY_POLL: std::time::Duration = std::time::Duration::from_millis(20);
+
 /// Synchronizes the cache with the CDN on a throwaway runtime; call it from a dedicated thread.
 ///
 /// Order: fetch the manifest (or fall back to the last saved copy), drop expired and unreferenced files,
 /// announce every valid cached file, download the missing `core` files and announce
-/// [`SyncEvent::CoreReady`]. Lazy files are then downloaded one at a time as their logical names
+/// [`SyncEvent::CoreReady`]. Lazy files are then downloaded, several at once, as their logical names
 /// arrive on `requests`; the function returns when the sender is dropped.
 pub fn sync_blocking(
     manifest_url: &str,
@@ -369,24 +372,62 @@ pub fn sync_blocking(
         }
         emit(SyncEvent::CoreReady);
 
-        // Lazy files on demand. Blocking here is fine: this runtime exists only for this loop.
-        while let Ok(name) = requests.recv() {
-            let Some(file) = manifest.files.get(&name) else {
-                continue;
-            };
-            if !is_cached(cache_dir, file)
-                && let Err(e) = download_file(&http, &base_url, cache_dir, &name, file).await
-            {
-                emit(SyncEvent::LazyFailed {
-                    name,
-                    reason: e.to_string(),
-                });
-                continue;
+        // Lazy files on demand, several at a time: an avatar asks for its hair, shirt and shoes at once.
+        // The requests are polled (not awaited) so downloads that are already running keep going.
+        let (done_tx, mut done_rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut in_flight = std::collections::HashSet::new();
+        let mut open = true;
+        while open || !in_flight.is_empty() {
+            while let Ok((name, result)) = done_rx.try_recv() {
+                in_flight.remove(&name);
+                match result {
+                    Ok(()) => emit(SyncEvent::FileReady {
+                        path: cache_file(cache_dir, &manifest.files[&name]),
+                        name,
+                    }),
+                    Err(reason) => emit(SyncEvent::LazyFailed { name, reason }),
+                }
             }
-            emit(SyncEvent::FileReady {
-                path: cache_file(cache_dir, file),
-                name,
-            });
+            match requests.try_recv() {
+                Ok(name) => {
+                    let Some(file) = manifest.files.get(&name) else {
+                        continue;
+                    };
+                    if in_flight.contains(&name) {
+                        continue;
+                    }
+                    if is_cached(cache_dir, file) {
+                        emit(SyncEvent::FileReady {
+                            path: cache_file(cache_dir, file),
+                            name,
+                        });
+                        continue;
+                    }
+                    in_flight.insert(name.clone());
+                    let (http, base_url, dir, file, tx) = (
+                        http.clone(),
+                        base_url.clone(),
+                        cache_dir.to_path_buf(),
+                        file.clone(),
+                        done_tx.clone(),
+                    );
+                    tokio::spawn(async move {
+                        let result = download_file(&http, &base_url, &dir, &name, &file)
+                            .await
+                            .map_err(|e| e.to_string());
+                        let _ = tx.send((name, result));
+                    });
+                }
+                Err(crossbeam_channel::TryRecvError::Empty) => {
+                    tokio::time::sleep(LAZY_POLL).await;
+                }
+                Err(crossbeam_channel::TryRecvError::Disconnected) => {
+                    open = false;
+                    if !in_flight.is_empty() {
+                        tokio::time::sleep(LAZY_POLL).await;
+                    }
+                }
+            }
         }
     });
 }
