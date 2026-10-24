@@ -18,6 +18,9 @@
     <key>UIViewControllerBasedStatusBarAppearance</key><true/>
     <key>UISupportedInterfaceOrientations</key>
     <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+    <!-- Without an explicit iPad list the iPad falls back to the winit view controller's own mask (all four orientations), and the on-screen keyboard then opens in portrait. -->
+    <key>UISupportedInterfaceOrientations~ipad</key>
+    <array><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
     <key>UILaunchScreen</key><dict/>
     <!-- Opts into the UIScene life cycle (required by the iOS 27 SDK); bevy_ios_app_delegate provides the scene delegate (no UISceneConfigurations needed) -->
     <key>UIApplicationSceneManifest</key>
