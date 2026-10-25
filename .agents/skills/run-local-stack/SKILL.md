@@ -23,3 +23,12 @@ GAME_DEVICE_ID=alice make client   # terminal 1
 GAME_DEVICE_ID=bob make client     # terminal 2
 ```
 Os dois entram na sala pública "lobby" e se veem em tempo real.
+
+## Mobile (host KMP)
+O mobile roda pelo app Kotlin Multiplatform de `kmp/` (ver `ai-docs/architecture/kmp-host.md`).
+```bash
+# A chave do servidor vem do ambiente (~/.zshenv); nunca imprima nem grave.
+zsh -c './scripts/kmp-ios-device.sh <udid> Debug'          # iPhone: compila, instala e abre (INSTALL=0 só compila)
+cd kmp && ./gradlew :androidApp:assembleDebug && adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+```
+Depois de abrir, `Documents/status.txt` e `Documents/game.log` do app mostram fps, memória e a conexão com o Nakama (`devicectl device copy from --domain-type appDataContainer --domain-identifier br.eng.joaovictor.resort`). Para limpar a sessão: botão "Limpar sessão (dev)" ou `-ResetSession`.

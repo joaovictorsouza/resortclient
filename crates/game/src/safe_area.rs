@@ -97,12 +97,38 @@ impl Plugin for SafeAreaPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<SafeArea>()
             .add_systems(Update, apply_hud_edges);
-        #[cfg(target_os = "ios")]
+        #[cfg(all(target_os = "ios", feature = "winit-host"))]
         app.add_systems(Update, ios::read_safe_area);
+        #[cfg(feature = "kmp-host")]
+        app.add_systems(Update, kmp::read_insets);
     }
 }
 
-#[cfg(target_os = "ios")]
+/// KMP host: the Compose shell reports the system bar and cutout insets of the current
+/// orientation (dp, the same unit as `Window::width`), so no orientation fix-up is needed.
+#[cfg(feature = "kmp-host")]
+mod kmp {
+    use super::SafeArea;
+    use bevy::prelude::*;
+    use bevy_kmp_ffi::bevy_kmp::Insets;
+
+    pub fn read_insets(insets: Res<Insets>, mut safe: ResMut<SafeArea>) {
+        if !insets.is_changed() {
+            return;
+        }
+        let next = SafeArea {
+            top: insets.top,
+            right: insets.right,
+            bottom: insets.bottom,
+            left: insets.left,
+        };
+        if *safe != next {
+            *safe = next;
+        }
+    }
+}
+
+#[cfg(all(target_os = "ios", feature = "winit-host"))]
 mod ios {
     use super::{SafeArea, landscape_insets};
     use bevy::prelude::*;
