@@ -82,6 +82,13 @@ class GameHost(
     /** Onboarding state reported by the game (`onboarding_stage`). */
     val stage: StateFlow<OnboardingStage> = _stage.asStateFlow()
 
+    private val _hud = MutableStateFlow(HudState())
+    /** Snapshot for the Compose HUD test (`hud_state`). */
+    val hud: StateFlow<HudState> = _hud.asStateFlow()
+
+    /** `COMPOSE_HUD=1`: draw the Compose HUD test over the game. */
+    val composeHud: Boolean = env["COMPOSE_HUD"] == "1"
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
@@ -111,8 +118,9 @@ class GameHost(
                 }
                 is BevyEvent.Memory -> rssMb = (event.rssBytes / 1048576u).toLong()
                 is BevyEvent.Gpu -> gpuName = event.name
-                is BevyEvent.App -> if (event.name == "onboarding_stage") {
-                    _stage.value = parseStage(event.payload.decodeToString())
+                is BevyEvent.App -> when (event.name) {
+                    "onboarding_stage" -> _stage.value = parseStage(event.payload.decodeToString())
+                    "hud_state" -> _hud.value = parseHud(event.payload.decodeToString())
                 }
                 is BevyEvent.ServiceRequest -> handleService(event)
                 is BevyEvent.Log -> platformLog(event.level.name, event.target, event.text)
@@ -176,6 +184,8 @@ class GameHost(
     }
 
     val backend: BevyBackend = UniffiBackend(host)
+
+    fun hudToggleNavigator() = host.sendMessage("hud_toggle_navigator", ByteArray(0))
 
     fun onboardingGoogle() = host.sendMessage("onboarding_google", ByteArray(0))
 

@@ -31,6 +31,11 @@ fun App(game: GameHost) {
                 onNickname = game::onboardingNickname,
                 onReset = game::onboardingReset,
             )
+            if (game.composeHud) {
+                val hud by game.hud.collectAsState()
+                val fps by game.fps.collectAsState()
+                ComposeHudTest(hud, fps, game::hudToggleNavigator)
+            }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }
     }

@@ -27,6 +27,8 @@ pub mod ios_google;
 #[cfg(all(target_os = "ios", feature = "winit-host"))]
 pub mod ios_window;
 #[cfg(feature = "kmp-host")]
+pub mod hud_bridge;
+#[cfg(feature = "kmp-host")]
 pub mod kmp_host;
 pub mod navigator;
 pub mod navigator_ui;
