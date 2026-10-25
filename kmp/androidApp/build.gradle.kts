@@ -64,11 +64,24 @@ android {
         // Template sources (Tailwind) are only needed to generate assets/ui/*.html.
         ignoreAssetsPattern = "!src:!.DS_Store"
     }
+    // The Google OAuth Android client is registered for the project keystore's SHA-1, so with the
+    // variables below (never committed) both debug and release builds are signed with it; without
+    // them the Android debug key is used and Google sign-in is rejected by the Credential Manager.
+    val projectKeystore = System.getenv("ANDROID_KEYSTORE")?.takeIf { it.isNotBlank() }
+    val projectSigning = projectKeystore?.let {
+        signingConfigs.create("project") {
+            storeFile = file(it)
+            storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
     buildTypes {
-        // Release signing with the project keystore is done by the existing scripts; without it the
-        // debug key is used so the build can be measured and installed.
+        debug {
+            projectSigning?.let { signingConfig = it }
+        }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = projectSigning ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
