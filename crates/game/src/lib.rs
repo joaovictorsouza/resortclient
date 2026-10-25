@@ -18,6 +18,8 @@ pub mod furniture;
 pub mod game_log;
 pub mod google_signin;
 pub mod gpu_compat;
+#[cfg(feature = "kmp-host")]
+pub mod hud_bridge;
 pub mod identity;
 pub mod ime;
 pub mod input;
@@ -26,8 +28,6 @@ pub mod inventory;
 pub mod ios_google;
 #[cfg(all(target_os = "ios", feature = "winit-host"))]
 pub mod ios_window;
-#[cfg(feature = "kmp-host")]
-pub mod hud_bridge;
 #[cfg(feature = "kmp-host")]
 pub mod kmp_host;
 pub mod navigator;

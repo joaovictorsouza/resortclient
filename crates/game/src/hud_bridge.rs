@@ -25,6 +25,11 @@ pub struct HudState {
     pub reconnecting: bool,
 }
 
+/// The Compose HUD test is off unless the build sets `COMPOSE_HUD=1` (see `assets/dev.env`).
+pub fn enabled(env: &[(String, String)]) -> bool {
+    env.iter().any(|(k, v)| k == "COMPOSE_HUD" && v == "1")
+}
+
 pub struct HudBridgePlugin;
 
 impl Plugin for HudBridgePlugin {
@@ -67,6 +72,14 @@ fn handle_messages(mut messages: MessageReader<HostMessage>, mut nav: ResMut<Roo
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_hud_test_is_off_by_default() {
+        assert!(!enabled(&[]));
+        assert!(!enabled(&[("COMPOSE_HUD".into(), "0".into())]));
+        assert!(!enabled(&[("OTHER".into(), "1".into())]));
+        assert!(enabled(&[("COMPOSE_HUD".into(), "1".into())]));
+    }
 
     #[test]
     fn state_serialises_to_the_documented_keys() {

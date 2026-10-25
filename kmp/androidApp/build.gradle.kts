@@ -30,7 +30,11 @@ val writeDevEnv = tasks.register("writeDevEnv") {
         append("GAME_ENV=$gameEnvironment\n")
         setting("NAKAMA_SERVER_KEY").takeIf { it.isNotEmpty() }?.let { append("NAKAMA_SERVER_KEY=$it\n") }
         setting("ASSETS_MANIFEST_URL").takeIf { it.isNotEmpty() }?.let { append("ASSETS_MANIFEST_URL=$it\n") }
-        System.getenv("EXTRA_DEV_ENV")?.let { append(it) }
+        // The Compose HUD test is a debug-only tool: release builds never carry the flag.
+        val releaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+        System.getenv("EXTRA_DEV_ENV")?.let { extra ->
+            append(extra.lineSequence().filterNot { releaseBuild && it.startsWith("COMPOSE_HUD") }.joinToString("\n"))
+        }
     }
     inputs.property("content", lines)
     val out = devEnvDir.map { it.file("dev.env") }

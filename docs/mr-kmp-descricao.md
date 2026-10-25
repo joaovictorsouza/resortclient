@@ -26,9 +26,16 @@ O Gradle resolve a biblioteca Kotlin `br.eng.joaovictor:bevy-kmp` por `includeBu
 ## NÃO validado
 - Android em aparelho real (login Google/Keystore, jogo completo) e Release com R8.
 - Teclado nos `TextInput` do `bevy_hui` (ponte de teclado não feita), áudio, multitoque da câmera no Android, aviso de memória do iOS.
-- Compose semitransparente/`Dialog`/`ModalBottomSheet` sobre a cena (próximo passo: teste de HUD em Compose).
+- Compose sobre a cena no iOS e em Release (no Android Debug o teste de HUD passou, veja abaixo).
 - Publicação da biblioteca no registro Maven do GitLab (depende do João).
 Lista completa em `docs/relatorio-final.md`.
+
+## HUD de teste em Compose (desativado por padrão)
+Teste de viabilidade de Compose sobre a cena 3D (barra translúcida, `Dialog`, `ModalBottomSheet`, um comando Compose→Bevy), sem remover o HUD bevy_hui. Fica **desligado**: o plugin Rust (`hud_bridge`) nem é registrado e o Compose não desenha nada sem `COMPOSE_HUD=1`. Para ligar no Android (só Debug; builds Release descartam o flag):
+```
+EXTRA_DEV_ENV=$'COMPOSE_HUD=1\n' ./gradlew :androidApp:assembleDebug
+```
+Resultado e limites: `docs/hud-compose.md` no bevy_kmp.
 
 ## Observações
 - O histórico desta branch é a continuação do GitLab (`main`); uma branch anterior do trabalho partiu do clone legado do GitHub e foi reaplicada aqui.

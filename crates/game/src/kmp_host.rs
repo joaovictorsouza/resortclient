@@ -38,13 +38,12 @@ pub fn pre_plugins(app: &mut App, config: &HostConfig) {
 }
 
 /// Adds the game on top of the app `bevy-kmp` prepared (window, input, lifecycle).
-pub fn build_app(app: &mut App, _config: &HostConfig) {
+pub fn build_app(app: &mut App, config: &HostConfig) {
     // The native shell draws the login and nickname screens (see `onboarding`).
-    app.add_plugins((
-        GamePlugin,
-        crate::onboarding::OnboardingPlugin,
-        crate::hud_bridge::HudBridgePlugin,
-    ));
+    app.add_plugins((GamePlugin, crate::onboarding::OnboardingPlugin));
+    if crate::hud_bridge::enabled(&config.env) {
+        app.add_plugins(crate::hud_bridge::HudBridgePlugin);
+    }
 }
 
 /// Per-GPU renderer workarounds, applied before the renderer exists (see `gpu_compat`).
