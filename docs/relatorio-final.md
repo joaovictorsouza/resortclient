@@ -20,7 +20,12 @@ cargo test -p game --no-default-features --features kmp-host   # lógica (24 tes
 Fluxo: login Google, nome de usuário, criador (ou direto à sala para quem já tem aparência no servidor), fechar e reabrir sem pedir login. Em dev há "Limpar sessão (dev)" no canto superior esquerdo.
 
 ## Números
-Ver `docs/medicoes.md` do `bevy_kmp` para o exemplo. No jogo real, o `status.txt` do container (`fps`, `rssMb`, `stage`, `gpu`) é gravado a cada segundo; os valores colhidos no iPhone estão na seção "Medições no jogo" abaixo.
+Medido no iPhone 16 Pro (A18 Pro, Metal), build **Debug**, jogo real na sala `lobby` conectado ao servidor dev (leitura do `status.txt` e do `game.log` do container):
+- FPS: 110 (tela de 120 Hz).
+- Memória residente: 290 MB.
+- Tamanho do app instalado: ~370 MB (Debug, segundo o João).
+- Sessão restaurada do Keychain sem pedir login; Nakama conectado em ~1,1 s depois do perfil.
+Exemplo da biblioteca (`bevy_kmp`): ver `docs/medicoes.md` lá. Paridade e endurecimento (Release/R8, medições completas) foram pulados por decisão do João.
 
 ## Ficou FORA / não validado
 - **Android real**: login Google e Keystore não foram testados em aparelho, por decisão do João. Risco conhecido: Activity/Credential Manager e SHA-1 do keystore cadastrado no Google Cloud. No emulador só foi verificado o onboarding com o login de dev.
