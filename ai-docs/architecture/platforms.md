@@ -40,3 +40,7 @@ scripts/build-apk.sh       # APK release assinado: target/android/resort-release
 - Release: keystore em `RESORT_KEYSTORE` (padrão `~/Documents/keystore/resort/dev/dev-release.keystore`) e senhas apenas por `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. O script imprime o SHA-1 para cadastrar no Google Cloud.
 - O servidor local é alcançado por `adb reverse tcp:7350 tcp:7350` (USB). Para Wi-Fi: `NAKAMA_HOST=<ip-do-mac>`. As variáveis vão no `assets/dev.env` do APK (`GAME_DEV_MODE=1` no `run-android.sh`, `0` no `build-apk.sh`); `EXTRA_DEV_ENV='CHAVE=valor\n'` injeta outras, como `RUST_LOG`.
 - Nas Adrenos 650 e 730 há um workaround de skinning (`gpu_compat.rs`); ver [investigacao-android-skinning.md](../process/investigacao-android-skinning.md).
+
+## Host KMP (branch feat/bevy-kmp): toque no `bevy_picking` (resolvido)
+
+No host KMP, os botões que dependem de `bevy_picking` (templates `bevy_hui`) não recebiam toque, enquanto a UI baseada em `Interaction` do `bevy_ui` (status panel) recebia. Causa: o `bevy-kmp` 0.1.2 só escrevia `TouchInput`, e o `bevy_picking` lê `WindowEvent`. Resolvido no `bevy-kmp` 0.1.3 (escreve os dois e não sintetiza mouse). A validação das telas `bevy_hui` no aparelho vem do teste manual do João.

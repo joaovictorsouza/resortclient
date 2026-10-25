@@ -11,9 +11,42 @@ crate-type = ["lib", "cdylib", "staticlib"]
 [[bin]]
 name = "game"
 path = "src/main.rs"
+required-features = ["winit-host"]
+
+[features]
+# Desktop, and the legacy winit-driven mobile entry points.
+default = ["winit-host"]
+winit-host = [
+    "bevy/default",
+    "bevy/android-native-activity",
+    "dep:bevy_ios_safearea",
+    "dep:bevy_ios_app_delegate",
+    "dep:winit",
+    "dep:objc2",
+    "dep:objc2-ui-kit",
+    "dep:security-framework",
+]
+# Mobile host: a Kotlin Multiplatform app owns the window/surface and the Bevy app runs inside it
+# through bevy-kmp. Same bevy features as `default`, minus everything that needs winit.
+kmp-host = [
+    "dep:bevy-kmp-ffi",
+    "dep:uniffi",
+    "bevy/default_app",
+    "bevy/3d_bevy_render",
+    "bevy/ui_bevy_render",
+    "bevy/scene",
+    "bevy/picking",
+    "bevy/bevy_ui_widgets",
+    "bevy/audio",
+    "bevy/std",
+    "bevy/multi_threaded",
+    "bevy/default_font",
+]
 
 [dependencies]
-bevy = { workspace = true, default-features = true, features = ["jpeg", "wav"] }
+bevy-kmp-ffi = { git = "https://gitlab.com/joaovictorsouza/bevy_kmp", tag = "v0.1.5", optional = true }
+uniffi = { version = "=0.29.4", optional = true }
+bevy = { workspace = true, default-features = false, features = ["jpeg", "wav"] }
 avian3d = { workspace = true }
 protocol = { path = "../protocol" }
 nakama_client = { path = "../nakama_client" }
@@ -23,12 +56,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bevy_hui = { version = "0.8", features = ["picking"] }
 bevy_hui_widgets = "0.7"
-bevy_ios_safearea = "0.8"
+bevy_ios_safearea = { version = "0.8", optional = true }
 # Timer for CdnReader, which waits for files that are still downloading (already in the tree through bevy_tasks).
 async-io = "2"
 
 [target.'cfg(target_os = "android")'.dependencies]
-bevy = { workspace = true, features = ["android-native-activity"] }
 jni = "0.21"
 # Same version as the one Bevy renders with; used to read the GPU name before the renderer starts.
 wgpu = { version = "30", default-features = false }
@@ -37,10 +69,10 @@ wgpu = { version = "30", default-features = false }
 # provides the scene delegate (opt-in through UIApplicationSceneManifest in Info.plist) and
 # forwards URL opens (Google sign-in redirect).
 [target.'cfg(target_os = "ios")'.dependencies]
-bevy_ios_app_delegate = "0.7"
+bevy_ios_app_delegate = { version = "0.7", optional = true }
 # Same winit as bevy_winit (0.30): needed for the iOS-only WindowExtIOS trait.
-winit = { version = "0.30", default-features = false }
-objc2 = "0.6"
-objc2-ui-kit = "0.3.1"
+winit = { version = "0.30", default-features = false, optional = true }
+objc2 = { version = "0.6", optional = true }
+objc2-ui-kit = { version = "0.3.1", optional = true }
 # Keychain access for the saved login (see secure_store.rs).
-security-framework = "3"
+security-framework = { version = "3", optional = true }

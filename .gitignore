@@ -29,3 +29,9 @@ Temp Package/
 .server-contract/
 .assets-publish.env
 build/
+kmp/iosApp/build-device
+kmp/iosApp/build
+kmp/iosApp/iosApp.xcodeproj
+kmp/**/build/
+kmp/.gradle/
+kmp/local.properties

@@ -186,6 +186,22 @@ impl NakamaRestClient {
             .await
     }
 
+    /// The appearance the server stores for the authenticated account (`get_avatar_appearance`
+    /// RPC). The server answers the default appearance when none was ever saved.
+    pub async fn get_avatar_appearance(
+        &self,
+        token: &str,
+    ) -> Result<protocol::AvatarAppearance, RestError> {
+        #[derive(Deserialize)]
+        struct Response {
+            appearance: protocol::AvatarAppearance,
+        }
+        let response: Response = self
+            .rpc(token, "get_avatar_appearance", &serde_json::json!({}))
+            .await?;
+        Ok(response.appearance)
+    }
+
     /// Calls the join_public_room RPC on Nakama to retrieve the active match_id for the designated room.
     pub async fn join_public_room(
         &self,
