@@ -15,3 +15,4 @@ Desde o [ADR 0013](0013-host-kmp-e-onboarding-nativo.md) o jogo roda no mobile d
 - Um único caminho de build mobile (Gradle/Xcode via KMP). Os valores do Google Sign-In do iOS já estão em `kmp/iosApp/project.yml`.
 - Arquivos locais ignorados (`ios/Config/Local.xcconfig`, `xcuserdata`) não foram tocados; ficam soltos na pasta `ios/` do disco do João até ele apagá-los.
 - Próximo passo sugerido: um MR separado removendo o Rust morto do mobile antigo e os workflows, com `cargo check` desktop e `kmp-host` (também em `aarch64-apple-ios` e `aarch64-linux-android`).
+- A raiz ganhou um `settings.gradle.kts` mínimo (`includeBuild("kmp")`) e um `gradlew` que aponta para `kmp/gradlew`, só para o IntelliJ abrir a raiz e editar Rust e Kotlin juntos; o build continua sendo feito em `kmp/`.

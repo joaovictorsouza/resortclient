@@ -76,12 +76,15 @@ O `kmp-ios-device.sh` mira o aparelho. Para o simulador use o Xcode **[suposiç�
 
 ### Abrir o projeto (recomendado)
 1. **File → Open** na **raiz** `~/Projetos/resortclient` (não em `kmp/`). Assim o IntelliJ enxerga `crates/` (Rust) e `kmp/` (Kotlin) no mesmo projeto. **[suposição]**
-2. O IntelliJ pode oferecer importar o Gradle; se não, abra a aba **Gradle**, clique em **Link Gradle Project** e escolha `kmp/settings.gradle.kts` (o Gradle **raiz** do Kotlin é `kmp/`, não a raiz do repositório; não existe `build.gradle` na raiz). **[suposição quanto aos passos de menu; a estrutura é confirmada]**
+2. A raiz tem um `settings.gradle.kts` mínimo que inclui o build de `kmp/` (*composite build*) e um `gradlew` na raiz (links para `kmp/gradlew` e `kmp/gradle/wrapper`, uma versão só do Gradle). Por isso o IDE **não** reclama mais de "settings.gradle[.kts] is not found". **[confirmado pela linha de comando]**: `./gradlew -p . projects` na raiz lista os builds incluídos `:kmp` e `:bevy-kmp`; `./gradlew :kmp:androidApp:assembleDebug -m` reconhece a tarefa; e `cd kmp && ./gradlew :androidApp:assembleDebug` continua funcionando como antes. Se o IDE ainda pedir **Link Gradle Project**, escolha o `settings.gradle.kts` da **raiz** (não o de `kmp/`). **[A importação pela interface do IntelliJ não foi testada visualmente.]**
+   Dentro do IDE as tarefas aparecem como `:kmp:androidApp:assembleDebug` (build `kmp`); no terminal use o `cd kmp && ./gradlew ...` das seções acima.
 3. Em *Settings → Build Tools → Gradle*: **Gradle JDK** = JDK 17 ou 21 (o de `JAVA_HOME`/SDKMAN, ou o JBR do IntelliJ; ambos servem, o projeto compila para Java 17) e "Build and run using: Gradle". **[confirmado que o Gradle roda com JDK 21; o JBR do IDE não foi testado]**
 4. Plugin Rust: abra `Cargo.toml` da raiz (*Cargo → Attach Cargo Project*, ou o aviso do plugin). O workspace tem `crates/protocol`, `crates/nakama_client` e `crates/game`; a navegação funciona para eles. **[suposição]**
 5. **Rust no IDE usa as features padrão do `game`** (`winit-host`, desktop). Para navegar no código do host KMP, em *Settings → Languages & Frameworks → Rust → Cargo*, marque as features do pacote `game` como `kmp-host` e desmarque `winit-host` (ou o equivalente "Use these features"); sem isso, `kmp_host.rs` e `hud_bridge.rs` aparecem como código inativo (cinza). **[suposição; o `cargo clippy -p game --no-default-features --features kmp-host` é a checagem confirmada no `check.sh`]**
 
-Se a raiz causar conflito de módulos (Gradle e Cargo disputando a mesma pasta), use a alternativa: abra **`kmp/`** no IntelliJ para o Kotlin/Android e **a raiz** no RustRover (ou noutra janela) para o Rust. **[suposição]**
+Alternativa se a raiz causar conflito de módulos: abra **`kmp/`** no IntelliJ para o Kotlin/Android e a raiz no RustRover (ou noutra janela) para o Rust. **[suposição]**
+
+O IntelliJ cria `local.properties` (com o `sdk.dir`) e `.gradle/` na raiz ao importar; ambos estão no `.gitignore`. Se o IDE oferecer adicionar arquivos novos ao Git, recuse (já aconteceu com o `local.properties`).
 
 ### PATH quando o IDE abre pelo Dock **[suposição, causa comum]**
 Apps abertos pelo Dock/Spotlight **não herdam** o `PATH` e as variáveis do seu shell: o Gradle não acha `cargo`/`rustup` (erro tipo "cargo not found" no sync ou no `cargoBuild...`). Soluções, na ordem de preferência:

@@ -36,3 +36,8 @@ kmp/**/build/
 kmp/.gradle/
 kmp/local.properties
 kmp/.kotlin/
+
+# IDE-generated, per machine
+local.properties
+.gradle/
+.kotlin/
