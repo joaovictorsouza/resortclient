@@ -28,6 +28,7 @@ Plataformas: desktop (macOS, Windows, Linux) e mobile (Android e iOS). A lógica
    - Rede com Tokio e Bevy: [ai-docs/architecture/networking.md](ai-docs/architecture/networking.md)
    - Multi-plataforma: [ai-docs/architecture/platforms.md](ai-docs/architecture/platforms.md)
    - Host KMP e onboarding nativo: [ai-docs/architecture/kmp-host.md](ai-docs/architecture/kmp-host.md)
+   - Rodando do zero após clonar: [ai-docs/architecture/rodando-do-zero.md](ai-docs/architecture/rodando-do-zero.md)
    - Contrato de rede: [protocol.md no servidor](https://github.com/joaovictorsouza/resort-game-server/blob/develop/contract/protocol.md). A cópia local de `contract/` só muda com `scripts/sync-contract.sh` e a skill `protocol-change-client`.
 2. **Skills de `.agents/skills/`**:
    - `client-feature-development`: features no Bevy com TDD.
