@@ -35,7 +35,7 @@ Teste de viabilidade de Compose sobre a cena 3D (barra translúcida, `Dialog`, `
 ```
 EXTRA_DEV_ENV=$'COMPOSE_HUD=1\n' ./gradlew :androidApp:assembleDebug
 ```
-Resultado e limites: `docs/hud-compose.md` no bevy_kmp.
+Resultado e limites: `ai-docs/architecture/hud-compose-teste.md` (e o guia genérico `docs/sobrepor-compose.md` no bevy_kmp).
 
 ## Observações
 - O histórico desta branch é a continuação do GitLab (`main`); uma branch anterior do trabalho partiu do clone legado do GitHub e foi reaplicada aqui.
