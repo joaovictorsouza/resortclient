@@ -103,3 +103,4 @@ fullscreen no mobile e `platforms.md`.
 
 Os personagens passaram para o pacote *Creative Characters* ([ADR 0010](../decisions/0010-creative-characters-pack-and-single-skeleton.md)): o esqueleto agora tem 44 joints (antes, 80) e o nó raiz se chama `Skeleton` (antes, `rig_kid`). O workaround de `gpu_compat.rs` continua necessário (o bug é do caminho de skinning por storage buffer, não do rig). Ainda **não foi revalidado em aparelho** com o rig novo: reexecutar `scripts/run-android.sh` no S22+ e no A56.
 
+> Nota (25/10/2026): `scripts/run-android.sh` e as pastas `ios/`/`android/` citadas foram removidos; veja o [ADR 0014](../decisions/0014-remocao-do-mobile-nativo-antigo.md).

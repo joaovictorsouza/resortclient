@@ -40,8 +40,7 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true
         NSLocalNetworkUsageDescription: Connects to the local development game server.
-        # Google sign-in values are kept from the previous app (see ios/Info.plist); the sign-in
-        # flow itself moves to the shell in the onboarding phase.
+        # Google sign-in values (same OAuth client the previous native iOS app used).
         GIDClientID: 785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk.apps.googleusercontent.com
         GIDServerClientID: 785803086063-jun3ecqn84ogjm34sf6727nnblacg0sj.apps.googleusercontent.com
         CFBundleURLTypes:

@@ -116,3 +116,5 @@ Adicionar em `rest.rs`, com testes de serialização/erros (mock HTTP):
 - Divergência entre o formato de token aceito pelo Nakama 3.41 e o emitido pelo Credential Manager/PKCE (verificar cedo, na Fase 2).
 - Login obrigatório aumenta o atrito e a dependência de Google/Apple (indisponibilidade ou conta banida bloqueia o jogador); definir plano de suporte.
 - Revisão das lojas: exigência de exclusão de conta e do botão Apple quando há Google no iOS.
+
+> Nota (25/10/2026): os scripts e projetos nativos citados aqui (`run-android.sh`, `ios/`, etc.) foram removidos; veja o [ADR 0014](../decisions/0014-remocao-do-mobile-nativo-antigo.md).

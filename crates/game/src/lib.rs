@@ -229,7 +229,7 @@ pub fn parse_env_file(content: &str) -> Vec<(String, String)> {
 }
 
 /// Android has no shell environment or command line: the profile goes to the app's private data
-/// dir, and `assets/dev.env` (written by `scripts/run-android.sh`) provides `NAKAMA_HOST` etc.
+/// dir, and `assets/dev.env` (written by the Gradle build of the Android shell) provides `NAKAMA_HOST` etc.
 #[cfg(all(target_os = "android", feature = "winit-host"))]
 fn configure_android_env(app: &bevy::android::android_activity::AndroidApp) {
     use std::io::Read;
@@ -293,39 +293,6 @@ mod env_file_tests {
     fn skips_malformed_lines_and_keeps_equals_inside_values() {
         let parsed = parse_env_file("garbage\n=novalue\nTOKEN=a=b\n");
         assert_eq!(parsed, vec![("TOKEN".to_string(), "a=b".to_string())]);
-    }
-}
-
-#[cfg(test)]
-mod info_plist_tests {
-    /// Xcode rewrites the plist with other indentation, so compare without whitespace.
-    fn compact(plist: &str) -> String {
-        plist.split_whitespace().collect()
-    }
-
-    fn info_plist() -> String {
-        compact(include_str!("../../../ios/Info.plist"))
-    }
-
-    #[test]
-    fn status_bar_is_controlled_by_the_view_controller() {
-        assert!(
-            info_plist().contains("<key>UIViewControllerBasedStatusBarAppearance</key><true/>")
-        );
-    }
-
-    #[test]
-    fn app_is_landscape_only_and_uses_scenes() {
-        let plist = info_plist();
-        assert!(plist.contains("UIInterfaceOrientationLandscapeLeft"));
-        assert!(plist.contains("UIInterfaceOrientationLandscapeRight"));
-        assert!(!plist.contains("UIInterfaceOrientationPortrait"));
-        assert!(plist.contains("UIApplicationSceneManifest"));
-    }
-
-    #[test]
-    fn compact_ignores_indentation() {
-        assert_eq!(compact("<key>A</key>\n\t<true/>"), "<key>A</key><true/>");
     }
 }
 

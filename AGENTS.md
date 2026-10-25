@@ -14,7 +14,7 @@ Plataformas: desktop (macOS, Windows, Linux) e mobile (Android e iOS). A lógica
 - `crates/game`: biblioteca central do jogo e executável desktop.
 - `contract/`: **cópia** do contrato publicado pelo servidor (fixtures, versão, catálogo de móveis). Nunca edite à mão.
 - `assets/`, `tools/`: apenas fonte Inter e UI (HTML gerado por Tailwind em `tools/ui`). Modelos, animações, áudio e miniaturas vivem no repositório privado `resort-game-assets` e chegam só pela CDN.
-- `android/`, `ios/`, `scripts/`, `environments/`: builds mobile antigos (winit) e ambientes (`dev.env`, `prod.env`).
+- `scripts/`, `environments/`: scripts (check, contrato, `kmp-ios-device.sh`) e ambientes (`dev.env`, `prod.env`). Os projetos mobile nativos antigos (`android/`, `ios/`) foram removidos ([ADR 0014](ai-docs/decisions/0014-remocao-do-mobile-nativo-antigo.md)).
 - `kmp/`: host Kotlin Multiplatform do mobile (`shared`, `androidApp`, `iosApp`).
 - `ai-docs/`: documentação viva (`process`, `architecture`, `decisions`, `specs`).
 - `.agents/skills/`: skills para agentes.
