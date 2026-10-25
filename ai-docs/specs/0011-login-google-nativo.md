@@ -42,3 +42,5 @@ IDs: Web `785803086063-jun3ecqn84ogjm34sf6727nnblacg0sj.apps.googleusercontent.c
 - [x] Perfil com `google_account` exige novo login Google na próxima execução (`config.rs`).
 - [x] Servidor: `get_profile_status` e a marca `nickname_set` de `set_nickname` (`go test ./internal/rpc`).
 - [ ] Teste manual em aparelho Android e iPhone reais (cadastro dos SHA-1/bundle no Google Cloud).
+
+> Nota (25/10/2026): os scripts e projetos nativos citados aqui (`run-android.sh`, `ios/`, etc.) foram removidos; veja o [ADR 0014](../decisions/0014-remocao-do-mobile-nativo-antigo.md).

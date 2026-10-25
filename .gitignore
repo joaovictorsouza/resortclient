@@ -35,3 +35,4 @@ kmp/iosApp/iosApp.xcodeproj
 kmp/**/build/
 kmp/.gradle/
 kmp/local.properties
+kmp/.kotlin/
