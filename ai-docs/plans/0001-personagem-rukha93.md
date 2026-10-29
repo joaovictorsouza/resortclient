@@ -1,6 +1,6 @@
 # Plano 0001: trocar o pacote de personagem pelo Rukha93 (Modular Anime Character)
 
-Status: **rascunho para decisão** (26/10/2026). Este documento é só planejamento: nenhum código do jogo e nenhum arquivo do pacote foi alterado.
+Status: **rascunho para decisão** (26/10/2026; revisado em 29/10/2026 com tiers de aparelho e LOD, seção 11.1). Este documento é só planejamento: nenhum código do jogo e nenhum arquivo do pacote foi alterado.
 Licenças de pacotes de terceiros: ignoradas por ora, a pedido do dono.
 Contexto herdado: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customization.md), [ADR 0010](../decisions/0010-creative-characters-pack-and-single-skeleton.md), [ADR 0011](../decisions/0011-assets-via-cdn.md), [investigação do skinning no Android](../process/investigacao-android-skinning.md), [guia de importação](../process/importar-pacote-de-personagens.md).
 
@@ -10,6 +10,7 @@ Contexto herdado: [ADR 0007](../decisions/0007-modular-character-pipeline-and-cu
 - **O custo é maior que o do pacote atual**: um avatar completo passa de ~3,2 mil triângulos no corpo e 44 juntas para ~18 mil triângulos e 71 juntas, de ~7 para ~24 draw calls (sem mesclar malhas) e de 1 textura compartilhada (a paleta) para ~12 texturas por visual. O desempenho em S22 (Adreno 730, com o workaround de skinning por uniform buffer) é o maior risco técnico e decide a fase 0.
 - **O pacote não traz animações** (nenhum FBX tem clip). Idle, walk, sit e lay precisam ser refeitos para o rig `CC_Base` (Reallusion), com o mesmo método de retarget que já existe no `resort-game-assets`.
 - **A personalização cresce muito**: de "1 cor sólida por peça" para "até 6 cores por peça (3 regiões × 2 tons) + 46 blend shapes no rosto + corpo masculino/feminino + 4 rostos por corpo + 22 cabelos, 12 camisetas/casacos, 6 calças, 5 conjuntos, 7 calçados, 9 chapéus, 2 óculos e 3 cachecóis". O protocolo, o servidor, o catálogo, o criador de personagem e o console mudam (quebra de compatibilidade aceita: o projeto não está em produção).
+- **Desempenho por aparelho (revisão de 29/10)**: o cliente detecta o aparelho (`DeviceTier` high/mid/low, com ajuste em execução e opção manual) e escolhe o LOD de cada avatar: L0/L1 para o jogador local e os próximos, L2 para os distantes, com animação em frequência menor (seção 11.1). O pacote **ainda não tem LOD** nos arquivos que vi; o plano gera os LODs no pipeline e usa os do pacote se aparecerem.
 - **Fases**: F0 spike e medições (porta de entrada, decide seguir ou não) → F1 pipeline de assets → F2 material toon e loader no cliente → F3 animações → F4 protocolo e servidor → F5 criador de personagem → F6 console → F7 desempenho e LOD → F8 rollout e limpeza. Estimativa relativa na seção 12.
 - **Decisões que são suas** estão na seção 14. As que mais mudam o plano: corpos masculino/feminino de volta, nível de personalização exposto, estilo toon só nos avatares ou também no cenário, e quantos avatares por sala o jogo precisa suportar.
 
@@ -280,8 +281,69 @@ Pontos de atenção, em ordem de risco:
 2. **Draw calls do corpo**: as 12 submalhas existem só para esconder partes sob a roupa. Alternativas: (a) mesclar em 3–4 grupos e usar variantes pré-mescladas por combinação de roupa (explosão combinatória), (b) manter 12 e mesclar só para LOD distante, (c) mesclar o corpo em uma malha e esconder por **máscara por vértice** no shader (um atributo/UV com o id da parte e um bitmask de partes escondidas no material). A (c) dá 1 draw call e não depende de combinações; é a recomendada, mas é a mudança de maior risco no shader.
 3. **Memória de texturas**: uma 2048² comprimida a 4 bpp com mipmaps ≈ 2,7 MB; um visual completo de ~12 texturas ≈ 15–25 MB de VRAM, e cada visual distinto na sala soma. Com 20 jogadores todos diferentes, o orçamento estoura sem reduzir para 1024² (÷4) e sem descarregar o que saiu da sala.
 4. **Custo do shader**: o fragment tem 2 amostras de máscara, 1 de normal, 1 de rampa, derivadas para o normal e vários `smoothstep`; é barato para o tamanho de avatar de um jogo de sala isométrica, mas o `discard` do cabelo (`alpha_cutoff`) desliga early-z; medir.
-5. **LOD**: gerar LOD1 no Blender (decimação do corpo para ≤ 2,5 mil, rosto sem morphs, sem normal map) e trocar por distância/tamanho na tela. Política depende da decisão 14.4 (quantos avatares por sala).
+5. **LOD**: três níveis (L0/L1/L2) escolhidos por tier de aparelho e por tamanho do avatar na tela, com animação mais lenta nos distantes: detalhado na **seção 11.1**. O teto de avatares por sala depende da decisão 14.4.
 6. **Orçamento proposto para aprovar** (a validar com medição): iPhone 16 Pro ≥ 60 fps e S22 ≥ 45 fps com 20 avatares distintos visíveis, 1,5 GB de pico de RAM e ≤ 300 MB de VRAM do jogo; abaixo disso, a F7 reduz resolução, ativa LOD e mescla malhas antes de qualquer corte de conteúdo.
+
+### 11.1 Tiers de aparelho e LOD por avatar (revisão de 29/10/2026)
+
+Pedido do dono: usar qualidade **alta ou média** no avatar do jogador local e nos próximos a ele (em aparelhos melhores), e **baixa** nos muito distantes, com **animação em frequência menor** para economizar recursos. Tudo isso é **só do cliente**: o servidor e o protocolo não sabem de LOD (a aparência é a mesma para todos, cada aparelho decide como desenhá-la).
+
+> **Estado do pacote**: na verificação de 29/10/2026 a pasta `Rukha93` continuava igual (582 arquivos, todos de 16/09/2024; 106 FBX, nenhum com LOD, nenhum nome com `lod`/`low`/`high`). Se o pacote com LOD foi salvo em outro lugar, ainda não o vi: **preciso do caminho ou da nova versão** (decisão aberta 14.16). Enquanto isso, o plano **gera os LODs no nosso pipeline** (Blender) e aceita os do pacote quando existirem.
+
+#### a) Níveis de LOD (conteúdo)
+
+| | L0 "high" | L1 "mid" | L2 "low" |
+|---|---|---|---|
+| Uso | jogador local, avatares muito próximos, tela de criação | avatares próximos e médios | avatares distantes ou pequenos na tela |
+| Triângulos por avatar | do pacote (~18 mil) | ≤ 8–10 mil | ≤ 2,5–3 mil |
+| Corpo | 12 submalhas ou 1 malha com máscara (11.2c) | 1 malha | 1 malha, sem mãos detalhadas |
+| Rosto | completo, 46 → ~16 morphs | sem morphs de fonema/olhar; só piscar | **sem morphs** |
+| Juntas | 71 (ou 57 sem torção) | 57 | ~24 (sem dedos e sem torção) |
+| Texturas (máscara/normal) | 1024² / 1024² (2048² só no corpo se valer) | 1024² / 512² | 256² / **sem normal map** |
+| Shader | toon completo | toon sem normal map, rim e outline | toon mínimo: máscara + rampa, sem rim, sem outline |
+| Animação | taxa cheia | taxa cheia ou 30 Hz | **10 Hz** (5 Hz muito longe), sem avaliar fora da tela |
+
+- Os LODs menores usam **o mesmo conjunto de nomes de junta, só um subconjunto** do esqueleto mestre: o remapeamento por nome (`rebind_part_joints`) e as animações continuam valendo (juntas ausentes são ignoradas). Os mesmos UVs e nomes de material de L0 valem em L1/L2 para o catálogo e as cores serem únicos.
+- Geração no Blender (`tools/asset_pipeline/make_lods.py`): decimação preservando bordas de UV e os grupos de peso, limite de 4 influências, remoção das juntas sem peso, orçamento de triângulos por categoria e validação (`test_assets_consistency.py`: subconjunto de juntas, mesmos materiais, tamanho). Se o pacote trouxer LODs próprios, o importador os usa e só gera o que faltar.
+
+#### b) Detecção de aparelho (`DeviceTier`)
+
+Novo módulo no cliente (`device_tier.rs`, ao lado de `gpu_compat.rs`), executado **uma vez antes do renderer subir** e reavaliado em execução:
+
+1. **Sinais de entrada** (todos disponíveis sem permissão especial): backend e `AdapterInfo` do wgpu (nome, fabricante, tipo); modelo do aparelho (iOS: `sysctlbyname("hw.machine")`, repassado pelo host KMP; Android: `Build.MODEL`/`Build.HARDWARE`/`SOC_MODEL` pelo host); RAM total; núcleos de CPU; versão do sistema; e o resultado do filtro Adreno do `gpu_compat.rs` (Adreno 650/730 com skinning por uniform buffer e preprocessing em CPU).
+2. **Regra inicial por tabela** (a calibrar na F0 com medições reais; os valores abaixo são hipóteses, não medições):
+   - **High**: iPhone A17 Pro/A18 e posteriores (iPhone 15 Pro, 16 e 16 Pro), iPad M-series, desktop com GPU discreta; Android com Adreno 740+ ou Mali-G715+ e ≥ 8 GB de RAM.
+   - **Mid**: iPhones A15/A16, Galaxy S22 (Adreno 730 com o workaround), Android com Adreno 6xx/7xx abaixo de 740 ou Mali-G710 e ≥ 6 GB.
+   - **Low**: iPhones antigos (A13 ou anterior), Android com < 6 GB de RAM, GPU desconhecida ou emulador.
+   - Aparelho desconhecido cai em **Mid** (decisão conservadora, trocar para Low se a RAM < 4 GB).
+3. **Ajuste em execução** (governador com histerese): janela de 5 s com o p95 do frame time; acima de 1,3× do orçamento por 2 janelas seguidas, **desce um tier** (nunca sobe sozinho na mesma sessão); alerta térmico do sistema (`ProcessInfo.thermalState` no iOS, `PowerManager` no Android) também desce. O tier final e o motivo vão para o log do jogo.
+4. **Sobrescrita**: variável de ambiente `GAME_TIER=high|mid|low` (testes) e uma opção "Qualidade dos personagens: Automática / Alta / Média / Baixa" nas configurações; a escolha manual vale sobre a detecção e fica salva localmente.
+5. **Saída**: um recurso `QualityProfile` com todos os números abaixo (um lugar só para calibrar), mais o log do que foi decidido.
+
+#### c) Política de LOD por avatar
+
+LOD por avatar = `min(política por distância, teto do tier)`. A métrica é o **tamanho do avatar na tela** (altura projetada em pixels lógicos), não a distância no mundo, porque a câmera é isométrica e tem zoom; avatar local e avatar sentado ou deitado recebem o mesmo tratamento do seu tamanho na tela.
+
+| Tier do aparelho | Jogador local | Próximos (anel de ~6 tiles ou altura na tela ≥ T1) | Médios | Distantes (altura < T2) |
+|---|---|---|---|---|
+| **High** | L0 | L0 até 8 avatares, o resto em L1 | L1 | **L2** |
+| **Mid** | L1 (L0 na criação) | L1 | L1 → L2 por tamanho | **L2** |
+| **Low** | L1 | L2 | L2 | L2 (e teto de avatares visíveis, 14.4) |
+
+- Limiares iniciais (calibrar na F0): T1 ≈ 220 px de altura, T2 ≈ 90 px; **histerese de 15 %** entre subir e descer de nível e atraso mínimo de 500 ms entre trocas, para não ficar piscando.
+- **Troca de nível** é feita trocando a cena glTF de cada peça (mesmo `AvatarPart`, mesmo esqueleto mestre), mantendo as cores e o estado de animação; a ordem é "carregar o novo, mostrar, descartar o antigo" para não aparecer corpo pelado (o mecanismo `HiddenUntilPosed` já cobre a primeira revelação).
+- **Animação por nível**: o avatar local e os próximos animam por frame; os distantes usam uma taxa menor. Como o `AnimationPlayer` do Bevy avalia todo frame, a implementação proposta é um sistema próprio que **pausa o player** e o avança por `seek_to` acumulando o tempo a cada 100 ms (10 Hz) ou 200 ms (5 Hz muito longe) com escalonamento entre avatares (cada um em um frame diferente, para não concentrar o custo) e **não avalia** o que está fora do frustum. A viabilidade de `pause + seek_to` no Bevy 0.20 e a ausência de "pulo" visível em 10 Hz são itens de medição da F0; plano B: interpolar a pose entre amostras ou trocar para um clip de baixa frequência pré-amostrado.
+- **Culling**: avatares fora do frustum não animam e não fazem skinning (a verificar o `NoFrustumCulling` das peças skinned do Bevy).
+- **Por tier também mudam**: resolução máxima de textura baixada (L0 só em High), `outline`/`rim` ligados só em High e Mid, sombra projetada só do jogador local e dos próximos, morphs só em L0/L1.
+
+#### d) Impacto no restante do plano
+
+- **CDN** (8.1): cada peça passa a ter variantes `l0`, `l1`, `l2` (`characters/rukha/parts/<cat>/<id>.l1.<sha8>.glb`) e o catálogo lista as que existem. O `manifest.json` ganha por arquivo os campos `lod` e `min_tier` (apps antigos ignoram, como já ignoram `ttl_days`); o cliente **só baixa o que o tier permite** (Low nunca baixa L0, e é onde o ganho em dados e RAM é maior). Core: corpo e rosto padrão em L1 e L2; L0 e demais peças lazy.
+- **Pipeline** (8.3): nova etapa de LOD após a limpeza do GLB (ver a); a conversão de texturas gera as resoluções por nível.
+- **Protocolo e servidor** (9): **sem mudança** (LOD é decisão local). O que muda é só a política de máximo de avatares por sala, se existir, que é da decisão 14.4.
+- **Console** (10): a aba Pacote/Materiais mostra os triângulos e as juntas por nível, deixa trocar o nível na prévia e roda a validação de LOD.
+- **Cliente**: `avatar.rs` ganha `AvatarLod` (nível atual) e o sistema `update_avatar_lod`; `avatar_anim.rs` ganha a taxa de animação por nível; `character_creator.rs` fixa L0 no avatar da prévia; `config.rs`/HUD ganham a opção de qualidade.
+- **Testes**: funções puras (`desired_lod(tier, local, screen_height, previous)`, tabela de tiers, histerese) sem engine, como já é o padrão de `appearance.rs`; teste de que L1/L2 só têm juntas do esqueleto mestre; teste de que o governador desce de tier e nunca sobe.
 
 ## 12. Fases, critérios de pronto e estimativa relativa
 
@@ -289,14 +351,14 @@ Estimativa em tamanhos relativos (P ≈ 1–2 dias, M ≈ 3–5, G ≈ 1–2 sem
 
 | Fase | Entrega | Pronto quando | Tamanho |
 |---|---|---|---|
-| **F0 Spike e medições** | Protótipo commitado (em `resort-game-assets/tools/` ou repo próprio), build no iPhone 16 Pro e no S22 com o `gpu_compat` do cliente, relatório de medições | (1) FPS e frame time com 1, 10 e 20 avatares nos dois aparelhos; (2) morph targets e `.basis` funcionando no Adreno 730 com uniform skinning; (3) altura, A-pose e `RETARGET` medidos; (4) comparação lado a lado com captura do Unity; (5) decisão **seguir/ajustar/parar** escrita neste documento | M |
-| **F1 Pipeline de assets** | `import_rukha_pack.py` + testes, catálogo v3, texturas comprimidas, GLBs limpos | um comando gera `assets/characters/rukha/**` do pacote; todas as peças com ≤ 4 influências, raiz `Skeleton`, mesmos nomes de junta; tamanho por peça dentro da meta; `./scripts/check.sh` verde; publicável no DEV em dry-run | G |
+| **F0 Spike e medições** | Protótipo commitado (em `resort-game-assets/tools/` ou repo próprio), build no iPhone 16 Pro e no S22 com o `gpu_compat` do cliente, relatório de medições | (1) FPS e frame time com 1, 10 e 20 avatares nos dois aparelhos, **por nível de LOD**; (1b) tabela de tiers e limiares da 11.1 calibrados com essas medições, e `pause + seek_to` a 10 Hz validado; (2) morph targets e `.basis` funcionando no Adreno 730 com uniform skinning; (3) altura, A-pose e `RETARGET` medidos; (4) comparação lado a lado com captura do Unity; (5) decisão **seguir/ajustar/parar** escrita neste documento | M |
+| **F1 Pipeline de assets** | `import_rukha_pack.py` + testes, catálogo v3, texturas comprimidas, GLBs limpos, **LODs L0/L1/L2** (`make_lods.py`, ou os do pacote) e campos `lod`/`min_tier` no manifest | um comando gera `assets/characters/rukha/**` do pacote; todas as peças com ≤ 4 influências, raiz `Skeleton`, mesmos nomes de junta; tamanho por peça dentro da meta; `./scripts/check.sh` verde; publicável no DEV em dry-run | G |
 | **F2 Material toon e loader** (cliente) | `ToonMaterial` e o shader no `crates/game`, carregamento de GLB + texturas pela CDN, material por peça e por avatar, ocultação das partes do corpo | um avatar vestido renderiza igual ao Unity (diferença visual aprovada em captura), cores por slot mudam sem recriar, sem regressão de `cargo test`/`clippy` | G |
 | **F3 Animações** | `rukha_anims.glb` e `clips.json` (idle, walk, sit, lay) | os quatro clips sem interpenetração relevante (relatório de penetração do console e conferência visual), `tiles_per_sec` calibrado, `validate_animations.py` verde | G |
 | **F4 Protocolo e servidor** | `AvatarAppearance` v2, `Catalog` v3, `Sanitize`, fixtures, `CONTRACT_VERSION` | `go test -race ./...` e `scripts/check-contract.sh` verdes; aparência antiga abre sem erro; dois clientes veem o mesmo visual | M |
 | **F5 Criador de personagem** | abas por slot, seletor de cores por região, sliders do rosto, escolha de corpo, prévia animada | criar, salvar e reabrir o personagem no iOS e no Android; outro jogador vê o resultado; testes de `appearance.rs` e do estado do criador | G |
 | **F6 Console** | aba Pacote Rukha93 e aba Materiais, `skeleton.py` generalizado | importar o pacote e editar materiais pelo console reproduz o resultado da linha de comando | G |
-| **F7 Desempenho e LOD** | mesclagem de malhas, LOD, texturas 1024², orçamento de memória | metas da seção 11 atingidas nos dois aparelhos com 20 avatares | G |
+| **F7 Tiers de aparelho, LOD e desempenho** | `device_tier.rs`, `QualityProfile`, `update_avatar_lod`, animação por taxa, opção de qualidade, mesclagem de malhas, texturas 1024², orçamento de memória | metas da seção 11 atingidas nos dois aparelhos com 20 avatares; high/mid/low detectados e sobrescrevíveis; troca de LOD sem pop nem corpo pelado; custo de animação dos distantes comprovadamente menor | G (cresce com o LOD) |
 | **F8 Rollout e limpeza** | publicação DEV, `verify-cdn.sh`, teste em aparelho, ADR 0015, remover o pacote Creative Characters e o código morto, atualizar `importar-pacote-de-personagens.md` | app novo no DEV com um fluxo completo (login → criador → sala com 2 jogadores), docs atualizados, caminhos antigos removidos | M |
 
 Dependências: F0 antes de tudo; F1 e F4 em paralelo; F2 depende de F1; F3 de F1 (e do rig definido na F0); F5 de F2, F3 e F4; F6 e F7 depois de F5; F8 por último. Caminho crítico: F0 → F1 → F2 → F5. O primeiro marco visível (avatar do Rukha andando numa sala, sem criador) fica no fim da F3.
@@ -312,6 +374,9 @@ Dependências: F0 antes de tudo; F1 e F4 em paralelo; F2 depende de F1; F3 de F1
 | Diferença visual contra o Unity (ambiente 0,7 fixo, ausência de GI) | média | médio | captura de referência com o Unity instalado; calibração do ambiente |
 | Retarget das animações em proporção anime (sentar, deitar) | média | médio | `contact_height` medido, `RETARGET_OFFSETS_DEG`, relatório de penetração |
 | Texturas pesadas na memória e na CDN | alta | médio | 1024², ETC1S nas máscaras, descarregar por TTL, orçamento de VRAM |
+| Troca de LOD causa pop visual ou download tardio da peça | média | médio | histerese, carregar antes de descartar, L1/L2 no tier core |
+| Throttle de animação (`pause + seek_to`) não funciona bem no Bevy 0.20 | média | médio | validar na F0; plano B de interpolar a pose ou clip de baixa frequência |
+| Detecção errada do tier (aparelho novo desconhecido) | média | baixo | padrão Mid, governador em execução e opção manual |
 | Console desatualizado depois da troca (esqueleto de 44 juntas) | certa | baixo/médio | F6 explícita; na meantime importação só por CLI |
 | Prototype ainda sem commit e dependente de caminhos locais | certa | médio | commitar/mover para `resort-game-assets` na F0 |
 | Catálogo v3 grande demais para `get_catalogs` | baixa | baixo | medir; delta e paginação |
@@ -336,6 +401,10 @@ Cada item traz minha recomendação; **não assumi nenhuma** nos números acima,
 13. **Manter o pacote Creative Characters em paralelo** durante a transição (flag) ou trocar de vez? *Recomendo* trocar de vez na F8; o projeto não está em produção.
 14. **Destino do protótipo `anime-character-bevy`**: mover o código útil para `resort-game-assets/tools` e `resortclient/crates` e arquivar o resto.
 15. **Se o material `Lit` (PBR com máscara) entra** (5): *recomendo* não portar.
+16. **Onde estão os LODs do pacote?** Não os encontrei na pasta `Rukha93` (arquivos de 16/09/2024). Preciso do caminho ou da nova versão; sem isso o pipeline gera os LODs.
+17. **Limiares e tabela de tiers** (11.1): aceitar os valores iniciais e calibrar na F0, ou você prefere fixar?
+18. **Mini benchmark no primeiro uso** (rodar alguns segundos de cena de teste para decidir o tier) além da tabela e do governador? *Recomendo* não: a tabela mais o governador bastam e evitam uma tela de espera.
+19. **Opção de qualidade visível ao jogador** (Automática/Alta/Média/Baixa) ou só variável de teste? *Recomendo* visível.
 
 ## 15. Fora do escopo deste plano
 
