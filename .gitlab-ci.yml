@@ -1,0 +1,24 @@
+# iOS build on GitLab: manual, UNSIGNED (sign when installing). Needs a macOS runner: GitLab.com SaaS macOS
+# runners (Premium/Ultimate) or your own Mac registered with the tag `macos`. Set the tag in IOS_RUNNER_TAG.
+# NAKAMA_SERVER_KEY is a masked CI/CD variable (Settings > CI/CD > Variables), never committed.
+# The check job is not here: run ./scripts/check.sh locally (see AGENTS.md).
+variables:
+  IOS_RUNNER_TAG: saas-macos-medium-m1
+  ENVIRONMENT: dev
+
+build-ios:
+  stage: build
+  when: manual
+  allow_failure: true
+  tags: [$IOS_RUNNER_TAG]
+  timeout: 2h
+  before_script:
+    - brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+    - rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+  script:
+    - scripts/ci/build-ios-unsigned.sh
+  artifacts:
+    name: resort-$ENVIRONMENT-$CI_PIPELINE_IID-unsigned
+    paths:
+      - target/ios/export/new_game-unsigned.ipa
+    expire_in: 1 week
