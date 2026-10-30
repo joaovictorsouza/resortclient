@@ -10,10 +10,14 @@ build-ios:
   stage: build
   when: manual
   allow_failure: true
+  image: macos-15-xcode-16
   tags: [$IOS_RUNNER_TAG]
   timeout: 2h
   before_script:
     - brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+    - brew list openjdk@17 >/dev/null 2>&1 || brew install openjdk@17
+    - export JAVA_HOME=$(/usr/libexec/java_home -v 17 2>/dev/null || brew --prefix openjdk@17)
+    - command -v rustup >/dev/null || (curl -sSf https://sh.rustup.rs | sh -s -- -y && . "$HOME/.cargo/env")
     - rustup target add aarch64-apple-ios aarch64-apple-ios-sim
   script:
     - scripts/ci/build-ios-unsigned.sh
