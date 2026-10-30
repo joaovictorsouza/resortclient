@@ -41,6 +41,8 @@ kmp-host = [
     "bevy/std",
     "bevy/multi_threaded",
     "bevy/default_font",
+    # Mobile avatar textures ship as GPU-compressed .basis (see toon_avatar).
+    "bevy/basis-universal",
 ]
 
 [dependencies]
