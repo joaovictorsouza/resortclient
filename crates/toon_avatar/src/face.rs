@@ -289,8 +289,10 @@ mod tests {
 
     #[test]
     fn avatars_with_different_seeds_do_not_blink_together() {
-        let (mut a, mut b) = (1u32, 2u32);
-        assert_ne!(next_blink_interval(&mut a), next_blink_interval(&mut b));
+        let (mut a, mut b) = (0x1234_5678u32, 0x9abc_def1u32);
+        let first: Vec<f32> = (0..5).map(|_| next_blink_interval(&mut a)).collect();
+        let second: Vec<f32> = (0..5).map(|_| next_blink_interval(&mut b)).collect();
+        assert_ne!(first, second);
     }
 
     #[test]
