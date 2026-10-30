@@ -1,6 +1,6 @@
 # Plano 0001: personagens toon do jogo a partir do `anime-character-bevy`, empacotados como crate reutilizável
 
-Status: **decisões do dono aplicadas em 30/10/2026** (seção 15); cor da pele resolvida por medição (15.13). Substitui o plano anterior sobre o pacote Rukha93 (descartado). Este documento é só planejamento: nenhum código do jogo, do protótipo nem do pacote Rukha93 foi alterado.
+Status: **implementado nas fases F0 a F7 em 30/10/2026 (ver [ADR 0015](../decisions/0015-crate-de-personagens-toon.md)); F8 parcial e F9 futura**; decisões do dono aplicadas em 30/10/2026 (seção 15); cor da pele resolvida por medição (15.13). Substitui o plano anterior sobre o pacote Rukha93 (descartado). Este documento é só planejamento: nenhum código do jogo, do protótipo nem do pacote Rukha93 foi alterado.
 Licenças de pacotes de terceiros: ignoradas por ora; a licença limitada dos assets é o motivo de a crate ir, no futuro, para um repositório **privado** próprio. **Decisão de 30/10/2026**: por enquanto a crate vive **no mesmo repositório do jogo** (workspace do `resortclient`) e a separação fica para depois (fase 9, futura); os assets nunca entram nesse repositório.
 Contexto: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customization.md), [ADR 0010](../decisions/0010-creative-characters-pack-and-single-skeleton.md), [ADR 0011](../decisions/0011-assets-via-cdn.md), [investigação do skinning no Android](../process/investigacao-android-skinning.md).
 
