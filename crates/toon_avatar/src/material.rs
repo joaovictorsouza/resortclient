@@ -19,7 +19,7 @@ use bevy::{
 use serde::Deserialize;
 
 use crate::{
-    avatar::{Avatar, OwnedBy, owner_of},
+    avatar::{Avatar, Body, OwnedBy, owner_of},
     catalog::AvatarLook,
     quality::Quality,
 };
@@ -154,11 +154,28 @@ impl Default for ToonSettings {
     }
 }
 
-/// The toon materials of one avatar, by glTF material name.
+/// The toon materials of one body (one avatar at one level of detail), by glTF material name.
 #[derive(Component, Default)]
 pub struct AvatarMaterials {
-    quality: Option<Quality>,
     map: HashMap<String, Handle<ToonMaterial>>,
+}
+
+impl AvatarMaterials {
+    /// Whether every texture of the materials has finished loading.
+    pub(crate) fn textures_loaded(
+        &self,
+        assets: &AssetServer,
+        materials: &Assets<ToonMaterial>,
+    ) -> bool {
+        self.map.values().all(|handle| {
+            materials.get(handle).is_none_or(|m| {
+                [&m.mask, &m.normal, &m.ramp]
+                    .into_iter()
+                    .flatten()
+                    .all(|image| assets.is_loaded_with_dependencies(image.id()))
+            })
+        })
+    }
 }
 
 fn set_slot(params: &mut ToonParams, slot: usize, c: [f32; 3]) {
@@ -260,7 +277,7 @@ pub(crate) fn toon_params(
     params
 }
 
-/// Replaces the glTF `StandardMaterial` of every mesh with the toon material of its avatar that
+/// Replaces the glTF `StandardMaterial` of every mesh with the toon material of its body that
 /// matches its glTF material name.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn assign_toon_materials(
@@ -271,12 +288,12 @@ fn assign_toon_materials(
     >,
     parents: Query<&ChildOf>,
     owners: Query<&OwnedBy>,
-    mut avatars: Query<(&Avatar, &mut AvatarMaterials)>,
+    mut bodies: Query<(&Body, &mut AvatarMaterials)>,
+    avatars: Query<&Avatar>,
     defs: Res<MaterialDefs>,
     assets: Res<AssetServer>,
     mut toon_materials: ResMut<Assets<ToonMaterial>>,
     settings: Res<ToonSettings>,
-    quality: Res<Quality>,
 ) {
     for (entity, name) in &meshes {
         let Some(owner) = owner_of(entity, &parents, &owners) else {
@@ -293,14 +310,13 @@ fn assign_toon_materials(
         let Some(def) = defs.get(name.0.as_str()) else {
             continue;
         };
-        let Ok((avatar, mut materials)) = avatars.get_mut(owner) else {
+        let Ok((body, mut materials)) = bodies.get_mut(owner) else {
             continue;
         };
-        // New quality tier: other textures, so forget the cached materials.
-        if materials.quality != Some(*quality) {
-            materials.map.clear();
-            materials.quality = Some(*quality);
-        }
+        let Ok(avatar) = avatars.get(body.avatar) else {
+            continue;
+        };
+        let quality = body.lod;
         let handle = materials
             .map
             .entry(name.0.clone())
@@ -328,9 +344,8 @@ fn assign_toon_materials(
                     mask: def
                         .mask
                         .as_ref()
-                        .map(|p| load_texture(&assets, &texture_path(p, *quality), def.mask_srgb)),
-                    normal: normal
-                        .map(|p| load_texture(&assets, &texture_path(p, *quality), false)),
+                        .map(|p| load_texture(&assets, &texture_path(p, quality), def.mask_srgb)),
+                    normal: normal.map(|p| load_texture(&assets, &texture_path(p, quality), false)),
                     ramp: Some(load_texture(&assets, RAMP, true)),
                 })
             })
@@ -342,13 +357,18 @@ fn assign_toon_materials(
     }
 }
 
-/// Pushes an avatar's colour choices into its materials (and restores defaults on reset).
+/// Pushes an avatar's colour choices into the materials of its bodies (and restores defaults on
+/// reset).
 fn apply_look_colors(
     defs: Res<MaterialDefs>,
-    avatars: Query<(Ref<Avatar>, &AvatarMaterials)>,
+    bodies: Query<(&Body, &AvatarMaterials)>,
+    avatars: Query<Ref<Avatar>>,
     mut toon_materials: ResMut<Assets<ToonMaterial>>,
 ) {
-    for (avatar, materials) in &avatars {
+    for (body, materials) in &bodies {
+        let Ok(avatar) = avatars.get(body.avatar) else {
+            continue;
+        };
         if !avatar.is_changed() {
             continue;
         }
@@ -369,21 +389,20 @@ fn apply_look_colors(
     }
 }
 
-/// Applies the outline setting (and the quality tier's permission) to every avatar material.
+/// Applies the outline setting (and the level of detail's permission) to every body material.
 fn apply_settings(
     settings: Res<ToonSettings>,
-    quality: Res<Quality>,
     defs: Res<MaterialDefs>,
-    avatars: Query<&AvatarMaterials>,
+    bodies: Query<(&Body, &AvatarMaterials)>,
     mut toon_materials: ResMut<Assets<ToonMaterial>>,
 ) {
     if !settings.is_changed() {
         return;
     }
-    for materials in &avatars {
+    for (body, materials) in &bodies {
         for (name, handle) in &materials.map {
             if let (Some(def), Some(mut mat)) = (defs.get(name), toon_materials.get_mut(handle)) {
-                mat.params.outline_thickness = if settings.outline && quality.outline() {
+                mat.params.outline_thickness = if settings.outline && body.lod.outline() {
                     def.outline_thickness
                 } else {
                     0.0

@@ -119,14 +119,14 @@ pub struct AtlasSource;
 /// The merged mesh that replaces the atlas pieces.
 #[derive(Component)]
 struct AtlasMerged {
-    avatar: Entity,
+    body: Entity,
     // Keeps the merged mesh asset alive.
     _mesh: Handle<Mesh>,
     /// Original mesh whose morph weights drive this one.
     morph_source: Option<Entity>,
 }
 
-/// State of the atlas material and merged mesh of one avatar.
+/// State of the atlas material and merged mesh of one body.
 #[derive(Component, Default)]
 pub struct AtlasBuilt {
     signature: Vec<Entity>,
@@ -135,6 +135,30 @@ pub struct AtlasBuilt {
     material: Option<Handle<AtlasMaterial>>,
     /// Quality the current material (and its textures) was built for.
     material_quality: Option<Quality>,
+}
+
+impl AtlasBuilt {
+    /// Whether the merged mesh and its material exist.
+    pub(crate) fn is_built(&self) -> bool {
+        self.material.is_some() && !self.signature.is_empty()
+    }
+
+    /// Whether every texture of the atlas material has finished loading.
+    pub(crate) fn textures_loaded(
+        &self,
+        assets: &AssetServer,
+        materials: &Assets<AtlasMaterial>,
+    ) -> bool {
+        self.material
+            .as_ref()
+            .and_then(|handle| materials.get(handle))
+            .is_none_or(|m| {
+                [&m.mask, &m.normal, &m.ramp]
+                    .into_iter()
+                    .flatten()
+                    .all(|image| assets.is_loaded_with_dependencies(image.id()))
+            })
+    }
 }
 
 pub struct AtlasPlugin;
@@ -195,25 +219,33 @@ fn atlas_texture(gender: char, quality: Quality, kind: &str) -> String {
     }
 }
 
-/// Keeps the atlas material in line with the avatar's colour choices, the outline setting and
-/// the quality.
+/// Keeps the atlas material in line with the avatar's colour choices and the outline setting.
 fn update_atlas_params(
     defs: Res<MaterialDefs>,
     settings: Res<ToonSettings>,
-    quality: Res<Quality>,
-    avatars: Query<(Ref<Avatar>, &AtlasBuilt)>,
+    bodies: Query<(&Body, &AtlasBuilt)>,
+    avatars: Query<Ref<Avatar>>,
     mut materials: ResMut<Assets<AtlasMaterial>>,
 ) {
-    for (avatar, built) in &avatars {
+    for (body, built) in &bodies {
+        let Ok(avatar) = avatars.get(body.avatar) else {
+            continue;
+        };
         if !(avatar.is_changed() || settings.is_changed()) {
             continue;
         }
-        let (Some(handle), Some(gender)) = (&built.material, built.gender) else {
+        let Some(handle) = &built.material else {
             continue;
         };
         if let (Some(mut material), Some(params)) = (
             materials.get_mut(handle),
-            atlas_params(gender, &defs, *quality, settings.outline, &avatar.look),
+            atlas_params(
+                body.body_type.letter(),
+                &defs,
+                body.lod,
+                settings.outline,
+                &avatar.look,
+            ),
         ) {
             material.params = params;
         }
@@ -231,7 +263,6 @@ fn merge_atlas(
     assets: Res<AssetServer>,
     defs: Res<MaterialDefs>,
     settings: Res<ToonSettings>,
-    quality: Res<Quality>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<AtlasMaterial>>,
     equipped: Query<&Equipped>,
@@ -250,14 +281,14 @@ fn merge_atlas(
     owners: Query<&OwnedBy>,
     parts: Query<&BodyPart>,
     merged: Query<(Entity, &AtlasMerged)>,
-    bodies: Query<(Entity, &Body)>,
-    mut avatars: Query<(Entity, &Avatar, &mut AtlasBuilt)>,
+    mut bodies: Query<(Entity, &Body, &mut AtlasBuilt)>,
+    avatars: Query<&Avatar>,
 ) {
-    // Visible pieces whose mesh data is loaded, by avatar.
+    // Visible pieces whose mesh data is loaded, by body.
     let mut visible_by_avatar: std::collections::HashMap<Entity, Vec<Entity>> =
         std::collections::HashMap::new();
     for (entity, mesh, _, name, own_part, _) in &sources {
-        let Some(avatar) = owner_of(entity, &parents, &owners) else {
+        let Some(owning_body) = owner_of(entity, &parents, &owners) else {
             continue;
         };
         let part = own_part.or_else(|| {
@@ -269,35 +300,39 @@ fn merge_atlas(
         let covered = part.is_some_and(|p| {
             equipped
                 .iter()
-                .any(|e| e.avatar == avatar && e.hides.contains(&p.0))
+                .any(|e| e.body == owning_body && e.hides.contains(&p.0))
         });
         if covered || meshes.get(&mesh.0).is_none() || piece(&name.0).is_none() {
             continue;
         }
-        visible_by_avatar.entry(avatar).or_default().push(entity);
+        visible_by_avatar
+            .entry(owning_body)
+            .or_default()
+            .push(entity);
     }
 
-    for (avatar_entity, avatar, mut built) in &mut avatars {
-        let mut visible = visible_by_avatar.remove(&avatar_entity).unwrap_or_default();
+    for (body, body_info, mut built) in &mut bodies {
+        let Ok(avatar) = avatars.get(body_info.avatar) else {
+            continue;
+        };
+        let quality = body_info.lod;
+        let mut visible = visible_by_avatar.remove(&body).unwrap_or_default();
         visible.sort();
-        if visible == built.signature && built.quality == Some(*quality) {
+        if visible == built.signature && built.quality == Some(quality) {
             continue;
         }
         built.signature = visible.clone();
-        built.quality = Some(*quality);
+        built.quality = Some(quality);
 
         for (entity, info) in &merged {
-            if info.avatar == avatar_entity {
+            if info.body == body {
                 commands.entity(entity).try_despawn();
             }
         }
-        let Some((body, _)) = bodies.iter().find(|(_, b)| b.avatar == avatar_entity) else {
-            continue;
-        };
         let Some(first) = visible.first().and_then(|e| sources.get(*e).ok()) else {
             continue;
         };
-        let gender = avatar.look.body.letter();
+        let gender = body_info.body_type.letter();
         let (skin, joints) = (first.2, first.2.joints.clone());
 
         // Remap UVs into the atlas, tag each vertex with its piece id.
@@ -394,10 +429,9 @@ fn merge_atlas(
         // The material belongs to the avatar; rebuild it when the body type or the quality changes.
         if built.gender != Some(gender)
             || built.material.is_none()
-            || built.material_quality != Some(*quality)
+            || built.material_quality != Some(quality)
         {
-            let Some(params) =
-                atlas_params(gender, &defs, *quality, settings.outline, &avatar.look)
+            let Some(params) = atlas_params(gender, &defs, quality, settings.outline, &avatar.look)
             else {
                 continue;
             };
@@ -405,16 +439,16 @@ fn merge_atlas(
                 params,
                 mask: Some(load_texture(
                     &assets,
-                    &atlas_texture(gender, *quality, "RGBMap"),
+                    &atlas_texture(gender, quality, "RGBMap"),
                     false,
                 )),
                 normal: quality.normal_maps().then(|| {
-                    load_texture(&assets, &atlas_texture(gender, *quality, "Normal"), false)
+                    load_texture(&assets, &atlas_texture(gender, quality, "Normal"), false)
                 }),
                 ramp: Some(load_texture(&assets, RAMP, true)),
             }));
             built.gender = Some(gender);
-            built.material_quality = Some(*quality);
+            built.material_quality = Some(quality);
         }
         let Some(material) = built.material.clone() else {
             continue;
@@ -439,7 +473,7 @@ fn merge_atlas(
             entity.insert(MeshMorphWeights::Value { weights });
         }
         entity.insert(AtlasMerged {
-            avatar: avatar_entity,
+            body,
             _mesh: handle,
             morph_source: source_entity,
         });

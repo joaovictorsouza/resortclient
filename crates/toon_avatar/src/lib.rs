@@ -1,7 +1,7 @@
 //! Reusable Bevy plugins for modular, toon-shaded characters.
 //!
 //! * [`ToonAvatarPlugins`] adds everything: the toon material, the wardrobe (body, garments,
-//!   head attachments), the skin-and-face atlas, mesh merging and the quality tier.
+//!   head attachments), the skin-and-face atlas, mesh merging and the device tier and the level of detail of each avatar.
 //! * Insert an [`AvatarCatalog`] and a [`MaterialDefs`] resource, then spawn
 //!   [`Avatar::new`]`(look)` on an entity. Change `Avatar::look` to change what it wears.
 //!
@@ -12,21 +12,27 @@
 mod atlas;
 mod avatar;
 mod catalog;
+mod lod;
 mod material;
 mod merge;
 mod quality;
 
 pub use atlas::{AtlasBuilt, AtlasMaterial};
-pub use avatar::{Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
+pub use avatar::{Applied, Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
 pub use catalog::{
     AvatarCatalog, AvatarLook, BodyCatalog, BodyType, CatalogEntry, ColorChoice, Slot,
+};
+pub use lod::{
+    AvatarLod, DeviceInfo, DeviceInfoOverride, DeviceTier, FrameGovernor, LodConfig, LodFocus,
+    LodPlugin, SizeClass, TierPreference, animation_interval, classify, desired_level, size_class,
+    too_slow,
 };
 pub use material::{
     AvatarMaterials, COLOR_SLOTS, MaterialDef, MaterialDefs, ToonMaterial, ToonMaterialPlugin,
     ToonParams, ToonSettings,
 };
 pub use merge::{MergeEnabled, MergePlugin};
-pub use quality::{Quality, QualityPlugin, QualityRenderSettingsPlugin};
+pub use quality::{Quality, QualityRenderSettingsPlugin};
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
 
@@ -36,7 +42,7 @@ pub struct ToonAvatarPlugins;
 impl PluginGroup for ToonAvatarPlugins {
     fn build(self) -> PluginGroupBuilder {
         PluginGroupBuilder::start::<Self>()
-            .add(QualityPlugin)
+            .add(LodPlugin)
             .add(ToonMaterialPlugin)
             .add(atlas::AtlasPlugin)
             .add(avatar::AvatarPlugin)

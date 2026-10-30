@@ -9,7 +9,9 @@
 
 use bevy::{light::DirectionalLightShadowMap, prelude::*, render::view::Msaa};
 
-#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
+use crate::lod::DeviceTier;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Quality {
     Low,
     Mid,
@@ -17,24 +19,6 @@ pub enum Quality {
 }
 
 impl Quality {
-    /// Phones start on Mid (change it from your own device detection); desktop on High.
-    /// `TOON_AVATAR_QUALITY=low|mid|high` overrides it, which is handy for desktop testing.
-    pub fn default_for_device() -> Self {
-        if let Ok(value) = std::env::var("TOON_AVATAR_QUALITY") {
-            match value.as_str() {
-                "low" => return Quality::Low,
-                "mid" => return Quality::Mid,
-                "high" => return Quality::High,
-                _ => {}
-            }
-        }
-        if cfg!(any(target_os = "ios", target_os = "android")) {
-            Quality::Mid
-        } else {
-            Quality::High
-        }
-    }
-
     pub fn label(self) -> &'static str {
         match self {
             Quality::Low => "Low",
@@ -99,19 +83,8 @@ impl Quality {
     }
 }
 
-/// Inserts the [`Quality`] resource (the device default unless the app already did).
-pub struct QualityPlugin;
-
-impl Plugin for QualityPlugin {
-    fn build(&self, app: &mut App) {
-        if !app.world().contains_resource::<Quality>() {
-            app.insert_resource(Quality::default_for_device());
-        }
-    }
-}
-
-/// Opt-in: applies the render settings of the current tier (shadow map size, MSAA) to the
-/// scene's lights and cameras. A game with its own camera settings should not add this.
+/// Opt-in: applies the render settings of the device tier (shadow map size, MSAA) to the scene's
+/// lights and cameras. A game with its own camera settings should not add this.
 pub struct QualityRenderSettingsPlugin;
 
 impl Plugin for QualityRenderSettingsPlugin {
@@ -122,14 +95,15 @@ impl Plugin for QualityRenderSettingsPlugin {
 }
 
 fn apply_quality(
-    quality: Res<Quality>,
+    tier: Option<Res<DeviceTier>>,
     mut shadow_map: ResMut<DirectionalLightShadowMap>,
     mut lights: Query<&mut DirectionalLight>,
     mut cameras: Query<&mut Msaa>,
 ) {
-    if !quality.is_changed() {
+    let Some(tier) = tier.filter(|t| t.is_changed()) else {
         return;
-    }
+    };
+    let quality = tier.quality();
     let size = quality.shadow_map_size();
     if let Some(size) = size {
         shadow_map.size = size;
@@ -140,5 +114,5 @@ fn apply_quality(
     for mut msaa in &mut cameras {
         *msaa = quality.msaa();
     }
-    info!("quality: {}", quality.label());
+    info!("scene quality: {}", tier.label());
 }

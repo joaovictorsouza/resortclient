@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
-    Avatar, AvatarCatalog, AvatarLook, BodyType, MaterialDefs, MergeEnabled, Quality,
-    QualityRenderSettingsPlugin, Slot, ToonAvatarPlugins, ToonSettings,
+    Avatar, AvatarCatalog, AvatarLook, BodyType, DeviceTier, LodFocus, MaterialDefs, MergeEnabled,
+    QualityRenderSettingsPlugin, Slot, TierPreference, ToonAvatarPlugins, ToonSettings,
 };
 
 fn assets_dir() -> PathBuf {
@@ -159,7 +159,16 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: Avatar
         other.set_color("mat_face_M", 1, [0.95, 0.80, 0.65]);
         commands.spawn((Avatar::new(other), Transform::from_xyz(0.9, 0.0, 0.0)));
     }
-    commands.spawn((Avatar::new(look), Transform::from_xyz(-0.9, 0.0, 0.0)));
+    let x = if std::env::var("TOON_DEMO_SECOND").is_ok() {
+        -0.9
+    } else {
+        0.0
+    };
+    commands.spawn((
+        Avatar::new(look),
+        LodFocus,
+        Transform::from_xyz(x, 0.0, 0.0),
+    ));
     let mut camera = commands.spawn((
         Camera3d::default(),
         // Toon colours are authored for display directly; skip tone mapping.
@@ -262,7 +271,8 @@ fn toggles(
     keys: Res<ButtonInput<KeyCode>>,
     mut settings: ResMut<ToonSettings>,
     mut merge: ResMut<MergeEnabled>,
-    mut quality: ResMut<Quality>,
+    tier: Option<Res<DeviceTier>>,
+    mut preference: ResMut<TierPreference>,
 ) {
     if keys.just_pressed(KeyCode::KeyO) {
         settings.outline = !settings.outline;
@@ -270,8 +280,10 @@ fn toggles(
     if keys.just_pressed(KeyCode::KeyM) {
         merge.0 = !merge.0;
     }
-    if keys.just_pressed(KeyCode::KeyQ) {
-        *quality = quality.next();
+    if keys.just_pressed(KeyCode::KeyQ)
+        && let Some(tier) = tier
+    {
+        *preference = TierPreference::Fixed(tier.next());
     }
 }
 

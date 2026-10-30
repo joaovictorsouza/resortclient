@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use bevy::{gltf::GltfMaterialName, prelude::*};
 
-use toon_avatar::{Avatar, COLOR_SLOTS, Equipped, MaterialDefs, Quality, Slot};
+use toon_avatar::{Avatar, COLOR_SLOTS, DeviceTier, Equipped, MaterialDefs, Slot};
 
 const BUTTONS: &[(&str, KeyCode)] = &[
     ("Top", KeyCode::Space),
@@ -351,10 +351,14 @@ fn refresh_panel(
     }
 }
 
-fn update_quality_label(quality: Res<Quality>, mut labels: Query<&mut Text, With<QualityLabel>>) {
-    if quality.is_changed() {
-        for mut text in &mut labels {
-            text.0 = format!("Quality: {}", quality.label());
-        }
+fn update_quality_label(
+    tier: Option<Res<DeviceTier>>,
+    mut labels: Query<&mut Text, With<QualityLabel>>,
+) {
+    let Some(tier) = tier.filter(|t| t.is_changed()) else {
+        return;
+    };
+    for mut text in &mut labels {
+        text.0 = format!("Tier: {}", tier.label());
     }
 }

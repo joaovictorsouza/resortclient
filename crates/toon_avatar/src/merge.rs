@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use bevy::{mesh::skinning::SkinnedMesh, prelude::*};
 
 use crate::{
-    avatar::{Body, BodyPart, Equipped, OwnedBy, owner_of},
+    avatar::{BodyPart, Equipped, OwnedBy, owner_of},
     material::ToonMaterial,
 };
 
@@ -68,21 +68,20 @@ fn merge_meshes(
     owners: Query<&OwnedBy>,
     merged_sources: Query<Entity, With<MergedSource>>,
     merged: Query<Entity, With<MergedMesh>>,
-    bodies: Query<(Entity, &Body)>,
     mut last: Local<Vec<Vec<Entity>>>,
 ) {
     // Group the eligible, visible meshes.
     let mut groups: HashMap<GroupKey, Vec<Entity>> = HashMap::new();
     if enabled.0 {
         for (entity, mesh, material, skin, parent, own_part) in &sources {
-            let Some(avatar) = owner_of(entity, &parents, &owners) else {
+            let Some(body) = owner_of(entity, &parents, &owners) else {
                 continue;
             };
             let part = own_part.or_else(|| parent.and_then(|p| parts.get(p.parent()).ok()));
             let covered = part.is_some_and(|p| {
                 equipped
                     .iter()
-                    .any(|e| e.avatar == avatar && e.hides.contains(&p.0))
+                    .any(|e| e.body == body && e.hides.contains(&p.0))
             });
             if covered {
                 continue;
@@ -94,7 +93,7 @@ fn merge_meshes(
                 continue;
             }
             groups
-                .entry((avatar, material.0.id(), skin.joints.clone()))
+                .entry((body, material.0.id(), skin.joints.clone()))
                 .or_default()
                 .push(entity);
         }
@@ -127,10 +126,8 @@ fn merge_meshes(
     }
 
     let mut draw_calls_saved = 0;
-    for ((avatar, _, joints), members) in &groups {
-        let Some((body, _)) = bodies.iter().find(|(_, b)| b.avatar == *avatar) else {
-            continue;
-        };
+    for ((body, _, joints), members) in &groups {
+        let body = *body;
         let Ok((_, first_mesh, material, skin, _, _)) = sources.get(members[0]) else {
             continue;
         };
