@@ -1,6 +1,6 @@
 # Plano 0001: personagens toon do jogo a partir do `anime-character-bevy`, empacotados como crate reutilizável
 
-Status: **rascunho para decisão** (29/10/2026). Substitui o plano anterior sobre o pacote Rukha93 (descartado). Este documento é só planejamento: nenhum código do jogo, do protótipo nem do pacote Rukha93 foi alterado.
+Status: **decisões do dono aplicadas em 30/10/2026** (seção 15); pendente só a cor da pele (15.13). Substitui o plano anterior sobre o pacote Rukha93 (descartado). Este documento é só planejamento: nenhum código do jogo, do protótipo nem do pacote Rukha93 foi alterado.
 Licenças de pacotes de terceiros: ignoradas por ora; a licença limitada dos assets é o motivo de a crate ir, no futuro, para um repositório **privado** próprio. **Decisão de 30/10/2026**: por enquanto a crate vive **no mesmo repositório do jogo** (workspace do `resortclient`) e a separação fica para depois (fase 9, futura); os assets nunca entram nesse repositório.
 Contexto: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customization.md), [ADR 0010](../decisions/0010-creative-characters-pack-and-single-skeleton.md), [ADR 0011](../decisions/0011-assets-via-cdn.md), [investigação do skinning no Android](../process/investigacao-android-skinning.md).
 
@@ -12,7 +12,7 @@ Contexto: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customizat
 - **Visual cartoon opcional para salas e objetos**: opção de configuração que troca os materiais do cenário por uma variante toon (e volta), medida e testada em captura e em aparelho; os personagens são sempre toon (seção 9).
 - **LOD**: o esquema conversado antes (por aparelho + por tamanho do avatar na tela, animação mais lenta nos distantes) **continua válido** e é conciliado com o do protótipo na seção 6: as malhas, o gerador (`make_lods.py`) e as pastas de textura por tamanho do protótipo viram os níveis L0/L1/L2; o que falta é a decisão **por avatar**.
 - **Fases**: F0 consolidar e medir o protótipo → F1 extrair a crate → F2 LOD por avatar e tier de aparelho → F3 animações → F4 rosto (olhos, expressões, piscada) → F5 objetos na mão (beber) → F6 integrar ao jogo (protocolo, servidor, CDN, criador) → F7 visual cartoon de salas e objetos → F8 pipeline, console e CDN → F9 (futura) separar a crate num repositório privado no GitLab. Estimativas na seção 13.
-- **Decisões do dono** estão na seção 15. As que mais mudam o plano: a crate começa no repositório do jogo e é separada depois (15.1, decidido); corpos masculino e feminino; nível de personalização; avatares por sala; expressões e "segurando objeto" vão pelo servidor ou só locais.
+- **Decisões do dono (30/10/2026)**, todas na seção 15: crate dentro do repositório do jogo (separação futura); corpos masculino e feminino de volta; até 50 avatares por sala; expressões pelo servidor; cenário cartoon desligado por padrão até o teste; animações do Mixamo, clips fixos; **personalização máxima**; troca total do pacote Creative Characters; cabelo estático. O pacote **não tem calçado masculino próprio** (usa o feminino nos dois corpos; seção 3).
 
 ## 2. O que o protótipo já tem (lido em 29/10/2026; **não executei** o protótipo)
 
@@ -37,7 +37,7 @@ Números que vi nos logs de 29/10 (quantidade de triângulos visíveis com roupa
 
 ## 3. O que o pacote Rukha93 fornece (resumo; medido no Blender 5.2 headless)
 
-106 FBX, 143 MB, Unity Built-in, **sem LOD, sem animações**, esqueleto Reallusion `CC_Base` com **71 juntas** (92 nós com `_end`), 14 de torção e dedos. Corpo F/M em 12 submalhas (~6,3 mil triângulos), 4 rostos por corpo (~5 mil triângulos, **46 blend shapes**), 22 cabelos (até 16 influências por vértice), 8 chapéus/variantes, 2 óculos, 3 cachecóis, 12 tops, 6 bottoms, 5 conjuntos, 7 calçados (só `F_shoes`), texturas só de **máscara RGB + normal** (sem albedo; 2048² no corpo, top e conjunto, 1024² no cabelo) e `ColorRamp.png` 512×16. Os 3 shaders toon, os subgrafos e o sample de personalização (`CustomizationDemo.cs`: equipar = reutilizar `bones`/`rootBone` do corpo, ocultar `BodyPartType`, `outfit` remove top e bottom) foram lidos e já estão portados no protótipo.
+106 FBX, 143 MB, Unity Built-in, **sem LOD, sem animações**, esqueleto Reallusion `CC_Base` com **71 juntas** (92 nós com `_end`), 14 de torção e dedos. Corpo F/M em 12 submalhas (~6,3 mil triângulos), 4 rostos por corpo (~5 mil triângulos, **46 blend shapes**), 22 cabelos (até 16 influências por vértice), 8 chapéus/variantes, 2 óculos, 3 cachecóis, 12 tops, 6 bottoms, 5 conjuntos, 7 calçados (**só `F_shoes`; não há `M_shoes`**: no sample do Unity os 7 `Shoes.0x.asset` ficam na pasta `Shared`, apontam para as malhas `F_shoes` e escondem a parte `Legs_Feet` (33) do corpo, nos dois corpos; os pés dos corpos F e M têm as mesmas dimensões nas minhas medições, então o encaixe deve servir, **a conferir visualmente na F0**), texturas só de **máscara RGB + normal** (sem albedo; 2048² no corpo, top e conjunto, 1024² no cabelo) e `ColorRamp.png` 512×16. Os 3 shaders toon, os subgrafos e o sample de personalização (`CustomizationDemo.cs`: equipar = reutilizar `bones`/`rootBone` do corpo, ocultar `BodyPartType`, `outfit` remove top e bottom) foram lidos e já estão portados no protótipo.
 
 Blend shapes do rosto (46): ajustes (`eye_size`, `nose_length`, `tuck_ears`, `shorten`, `eyelashes_1`), expressões (`happy_01..03`, `angry_01..03`, `sad_01..03`, `surprised_01`, `extra_01`), olhos (`eye_look_*` ×8, `eyes_closed.01..03`, `eyes_wide`, `eye_iris_small`), sobrancelhas (`eyebrows_up/down`), boca (`jaw_open`) e 10 fonemas. A função exata de cada uma (por exemplo, qual `eyes_closed` é o piscar completo) **precisa ser conferida visualmente na F4**; não assumi.
 
@@ -125,12 +125,12 @@ A tela de montagem atual (`ui.rs`: botões por categoria, painel de cores por re
 | Mid | L1 (L0 na criação) | L1 | L1 → L2 por tamanho | L2 |
 | Low | L1 | L2 | L2 | L2 (e teto de avatares visíveis, 15.4) |
 
-Histerese de 15 % entre níveis e atraso mínimo de 500 ms entre trocas; a troca carrega o novo nível antes de descartar o antigo (o protótipo hoje destrói o corpo e recria; isso precisa mudar). Limiares são hipóteses iniciais para calibrar na F2.
+**Salas com até 50 avatares (decidido, 15.4)**: o servidor e o cliente suportam 50 por sala; quantos são **desenhados** é decidido pelo zoom da câmera (o enquadramento já limita quem está na tela) e por um teto de avatares visíveis por tier que será calibrado na F2 (ainda sem número). Fora do frustum, não se anima nem se faz skinning. Com 50 avatares todos distintos a memória de texturas é o limite: os distantes usam L2 (512 px) e o cache descarrega por LRU. Histerese de 15 % entre níveis e atraso mínimo de 500 ms entre trocas; a troca carrega o novo nível antes de descartar o antigo (o protótipo hoje destrói o corpo e recria; isso precisa mudar). Limiares são hipóteses iniciais para calibrar na F2.
 
 ## 7. Animações
 
 - O pacote e o protótipo **não têm animações**. Para o jogo: `idle`, `walk` (com `tiles_per_sec`, sem root motion), `sit`, `lay`, mais os de objetos (seção 8).
-- Método do jogo (`build_animations.py`, `rig_math.py`, `sample_mixamo.py`): amostrar com Blender, matemática em Python, `BONE_MAP` novo para os nomes `CC_Base`, correção de direção do osso (A-pose do CC contra T-pose do Mixamo), quadril só com deslocamento vertical escalado pela altura. **Mover essas ferramentas para a crate** (`tools/`), porque retarget é parte do esquema de rigging reutilizável. Fonte dos clips: Mixamo (as quatro básicas mais beber) ou retargetar as atuais do jogo (decisão 15.9).
+- Método do jogo (`build_animations.py`, `rig_math.py`, `sample_mixamo.py`): amostrar com Blender, matemática em Python, `BONE_MAP` novo para os nomes `CC_Base`, correção de direção do osso (A-pose do CC contra T-pose do Mixamo), quadril só com deslocamento vertical escalado pela altura. **Mover essas ferramentas para a crate** (`tools/`), porque retarget é parte do esquema de rigging reutilizável. Fonte dos clips: **Mixamo** (decidido, 15.9): `idle`, `walk`, `sit`, `lay` e beber, retargetados para `CC_Base`.
 - **Rigging**: esqueleto mestre único por avatar (71 juntas `CC_Base`, 57 se descartar torção), um `AnimationPlayer` no nó raiz, peças com joints remapeados por nome (o protótipo já faz), cabelo e chapéu com esqueleto próprio pendurados em `CC_Base_Head`; nó raiz padronizado (`Skeleton`) no export; escala 0,01 do FBX aplicada; 4 influências por vértice no export (cabelo longo chega a 16, revisar peça a peça); mesma pose de repouso e inverse bind matrices em todas as peças (`check_skeletons.py` vira teste). Ossos de torção ficam parados.
 - **Camadas**: `AnimationGraph` com máscara de corpo superior para o gesto de beber sobre idle/walk/sit.
 - **Taxa reduzida**: o `AnimationPlayer` do Bevy avalia todo frame; proposta: sistema próprio que pausa o player dos distantes e o avança por `seek_to` a cada 100 ms (10 Hz) ou 200 ms (5 Hz), escalonado entre avatares, e que não avalia o que está fora do frustum. **Viabilidade de pause + seek_to e ausência de pulo visível são itens de medição da F0/F2**; plano B: interpolar a pose entre amostras ou clip de baixa frequência pré-amostrado.
@@ -152,13 +152,13 @@ Histerese de 15 % entre níveis e atraso mínimo de 500 ms entre trocas; a troca
 - **Objeto**: um glTF qualquer (do catálogo de móveis/props); o carregamento é lazy pelo `CdnReader`; em L2 o objeto segurado continua (custa uma draw call) ou some, conforme medição.
 - **Animação**: clips `grip_cup`/`grip_can` (pose dos dedos, camada de mão) e `drink` (levar à boca, inclinar, voltar), em camada de corpo superior; fonte Mixamo ("Drinking") retargetada, ou autoria no Blender para o toon. Sequência `Hold → Drink → Release` como máquina de estados da crate; eventos `HoldStarted`, `DrinkFinished`.
 - **IK**: o Bevy 0.20 não traz IK; para pegar objetos em alturas variáveis (mesa, balcão) seria preciso IK de dois ossos analítico. **Primeira entrega usa clip fixo** (objeto na altura da mão, como beber); IK entra só se o jogo precisar de "pegar da mesa" (decisão 15.12).
-- **Servidor e protocolo**: o estado "segurando `item_id`" e o evento de beber precisam chegar aos outros jogadores. Duas opções: (a) só local na primeira entrega (demonstrador e teste), (b) campo opcional `holding` em `AvatarSnapshot` e uma mensagem `avatar_action` (broadcast, rate limit, validado contra o catálogo de props). Recomendo (b) na F6, depois que a F5 estiver validada local. Mesma decisão para expressões (15.5).
+- **Servidor e protocolo (expressões: decidido que vão pelo servidor, 15.5)**: a expressão atual do avatar viaja como campo `expression` (enum pequeno) no `AvatarSnapshot` e na mensagem `avatar_action`, com validação e rate limit no servidor; a piscada é só local. O estado "segurando `item_id`" e o evento de beber precisam chegar aos outros jogadores. Duas opções: (a) só local na primeira entrega (demonstrador e teste), (b) campo opcional `holding` em `AvatarSnapshot` e uma mensagem `avatar_action` (broadcast, rate limit, validado contra o catálogo de props). Recomendo (b) na F6, depois que a F5 estiver validada local. Mesma decisão para expressões (15.5).
 
 ## 9. Visual cartoon opcional para salas e objetos
 
 **Requisito**: implementar e **testar** a opção de ligar/desligar o visual cartoon nas salas e nos objetos (móveis, pisos, paredes); os personagens são sempre toon.
 
-- **Estado**: `VisualStyle { Realistic, Cartoon }` como recurso do jogo, ligado a uma opção nas configurações, salva localmente (somente cliente, sem servidor). Padrão: decisão 15.6.
+- **Estado**: `VisualStyle { Realistic, Cartoon }` como recurso do jogo, ligado a uma opção nas configurações, salva localmente (somente cliente, sem servidor). **Padrão: desligado** (decidido, 15.6); depois dos testes da F7 você decide se passa a ligado.
 - **Mecanismo** (duas alternativas, avaliar as duas na F7 e escolher com captura e medição):
   - **A. Troca de material**: um `ToonObjectMaterial` (cor da textura base × rampa de luz, `alpha`, cor de tint, outline opcional) que substitui o `StandardMaterial` de cada malha de cenário, guardando o original (`OriginalMaterial`) para voltar; troca em tempo de execução ao mudar a opção. Mais simples de entender; perde recursos do PBR (sombra recebida, alpha blend dos ghosts) que precisam ser reimplementados.
   - **B. `ExtendedMaterial<StandardMaterial, ToonExt>`**: mantém todo o pipeline PBR (sombras, transparência dos ghosts e das paredes) e aplica o sombreamento toon por uma flag no fragment. Sem troca de handle; a opção só muda um uniform. **Recomendo B como primeira tentativa**, por menor risco com ghosts, paredes translúcidas e sombras.
@@ -173,7 +173,7 @@ Histerese de 15 % entre níveis e atraso mínimo de 500 ms entre trocas; a troca
 ## 10. Personalização, dados e protocolo
 
 - **Slots**: corpo (F/M), rosto (4 por corpo), cabelo (22, com variante de chapéu), chapéu (3), óculos (2), cachecol (3), top (12), bottom (6), conjunto (5, substitui top e bottom), calçado (7), mais roupas customizadas do `fit_garment.py`. Regras do sample de Unity mantidas.
-- **Cores**: cada material tem 6 slots (A1, A2, B1, B2, C1, C2 = três regiões × dois tons) mais rim/outline; níveis de personalização: **simples** (1 cor por peça), **intermediário** (3 cores) ou **completo** (6 cores + ajustes do rosto). Recomendo intermediário na primeira entrega e completo depois (as listas de cores já comportam). Qual região do material do corpo é "pele" precisa ser confirmada em jogo (decisão aberta, não assumi).
+- **Cores**: cada material tem 6 slots (A1, A2, B1, B2, C1, C2 = três regiões × dois tons) mais rim/outline; níveis de personalização: **simples** (1 cor por peça), **intermediário** (3 cores) ou **completo** (6 cores + ajustes do rosto). **Decidido: personalização máxima possível (nível completo)**: 6 cores por peça nos slots editáveis, cor de pele e de íris, ajustes de fisionomia (morphs) e todas as peças e combinações do pacote; a UI do criador agrupa em modo simples e avançado só para não sobrecarregar, sem esconder nada. Qual região do material do corpo é "pele" precisa ser confirmada em jogo (decisão aberta, não assumi).
 - **`AvatarLook`** (crate) é o mesmo dado que o jogo serializa. `AvatarAppearance` v2 no protocolo: `body_type`, `face_id`, `face_morphs` (inteiros 0–255), `slots` com `id` e `colors`, `accessories`; objeto < 600 bytes. Servidor: catálogo v3 (itens com `body_types`, `hides`, `replaces`, materiais e slots editáveis), `Sanitize` validando ids, cores só nos slots editáveis e regras de conjunto/chapéu; fixtures de `contract/`, `CONTRACT_VERSION`, `sync-contract.sh`; testes `go test -race`. **Sem campo de LOD** (é decisão local). Quebra de compatibilidade aceita; aparências antigas viram o visual padrão.
 - **Catálogo no formato da crate**: `catalog.json` (assets JSON), com por item: GLB por corpo e por nível, `hides`, `replaces`, `materials[]` (modo, máscara, normal, cores padrão, slots editáveis) e, para props, `grip`. A crate define o **esquema** e o validador; o jogo e o servidor só o consomem.
 
@@ -231,27 +231,29 @@ Dependências: F0 antes de tudo; F1 depois de F0; F2, F3 e F4 sobre a F1 (F3 ant
 | Detecção errada do tier | média | baixo | padrão Mid, governador e opção manual |
 | Protótipo sem commit e dependente de caminhos locais | certa | médio | F0 |
 
-## 15. Decisões abertas (para o dono)
+## 15. Decisões (30/10/2026)
 
-Cada uma com a minha recomendação; nenhuma foi assumida nos números acima, exceto onde dito.
+| # | Tema | Decisão | Efeito no plano |
+|---|---|---|---|
+| 1 | Onde a crate mora | dentro do repositório do jogo; separar no futuro | seção 5.1 e F9 (futura) |
+| 2 | Nome | manter os nomes provisórios (`toon_avatar`, `toon_avatar_demo`) e o repositório do jogo, sem repositório novo agora (**interpretei assim a sua resposta**; me corrija se queria outro nome) | seção 5.1 |
+| 3 | Corpos | **voltam masculino e feminino** (`body_type`) | seções 3, 10, protocolo v2 |
+| 4 | Avatares por sala | **até 50** por sala (salas maiores); visíveis: menos, número ainda não decidido; o zoom controla | seção 6; teto de visíveis calibrado na F2 |
+| 5 | Expressões | **pelo servidor** (campo `expression` e mensagem `avatar_action`); piscada local. "Segurando objeto": **segui a recomendação** (também pelo servidor, mesma mensagem, F6) | seções 8.1, 8.2 |
+| 6 | Cartoon no cenário | **desligado por padrão**; depois dos testes decide-se se liga | seção 9, F7 |
+| 7 | Outline real | seguir a recomendação: testar na F7; só o rim do pacote se o custo não compensar | seção 9 |
+| 8 | L3 e juntas reduzidas no L2 | seguir a recomendação: decidir com a medição da F2 | seção 6 |
+| 9 | Animações | **Mixamo** | seção 7, F3 |
+| 10 | Personalização | **máxima possível** (6 cores por peça, pele, íris, morphs, todas as peças) | seção 10 |
+| 11 | Texturas | seguir a recomendação: 1024² máximo no L1; 2048² só no L0 do corpo; normal map só em L0 e L1 | seção 11 |
+| 12 | IK | **clips fixos** na primeira entrega | seção 8.2 |
+| 13 | Cor da pele | **em aberto** ("sei la"): a F0/F4 abre o material do corpo, identifica a região de pele na máscara e propõe, com capturas, quantos tons | **única decisão pendente** |
+| 14 | Calçados M | o jogo deve ter calçado masculino: **o pacote não traz `M_shoes`**; os 7 calçados são compartilhados (malha `F_shoes` serve aos dois corpos no sample do Unity) | seção 3; F0 confere o encaixe no corpo M; se não servir, é preciso ajustar as malhas (`fit_garment.py`) |
+| 15 | Pacote antigo | **trocar de vez** o Creative Characters (sem flag), no fim da F6 | F6 |
+| 16 | Cabelo | **física estática** (cadeias de ossos paradas) | seção 2/6 |
+| 17 | Tiers e limiares | seguir a recomendação: valores iniciais calibrados na F0/F2; opção de qualidade visível ao jogador; sem benchmark no primeiro uso | seção 6 |
 
-1. ~~Crate privada vs. cliente público~~ **Decidido em 30/10/2026**: a crate começa no repositório do jogo e a separação fica para depois (F9). Fica aberto, para a F9, se o repositório separado será privado com credencial na CI ou público só com código.
-2. **Nome da crate e do repositório** (`resort-characters`/`toon_avatar` são provisórios).
-3. **Corpos masculino e feminino** de volta (o pacote é separado por F/M; a ADR 0010 tinha removido o gênero). *Recomendo voltar.*
-4. **Quantos avatares por sala** o jogo precisa suportar e qual o teto de avatares visíveis no tier Low.
-5. **Expressões, piscada e "segurando objeto" vão pelo servidor** (visível aos outros) ou só locais? *Recomendo servidor para expressão e objeto (mensagem `avatar_action` com rate limit), piscada só local.*
-6. **Visual cartoon do cenário**: ligado ou desligado por padrão, e se vale em salas e móveis ou só em móveis. *Recomendo desligado por padrão até a F7 comparar.*
-7. **Outline real** (casco invertido) em móveis, ou só o rim do pacote? *Recomendo testar e deixar só o rim se o custo não compensar.*
-8. **L3** (≤ 3 mil triângulos) além do L2 do protótipo (4–5 mil), e juntas reduzidas no L2: decidir com a medição da F2.
-9. **Fonte das animações**: retargetar as atuais, baixar do Mixamo ou comprar? Inclui a de beber.
-10. **Nível de personalização exposto** (1, 3 ou 6 cores por peça; morphs no criador). *Recomendo 3 cores na primeira entrega.*
-11. **Resolução das texturas no mobile** (1024² máximo no L1 e 2048² só no L0 do corpo) e se o normal map entra no L1.
-12. **IK de dois ossos** para pegar objetos em alturas diferentes, ou só clips fixos na primeira entrega? *Recomendo clips fixos.*
-13. **Cor da pele**: qual região/slot do corpo é a pele e quantos tons o jogador escolhe.
-14. **Calçados**: só existe `F_shoes`; confirmar se o corpo M usa a mesma malha (não assumi).
-15. **Manter o pacote Creative Characters em paralelo** durante a F6 (flag) ou trocar de vez? *Recomendo trocar de vez no fim da F6.*
-16. **Física do cabelo**: cadeias estáticas (recomendo) ou pêndulo simples.
-17. **Limiares e tabela de tiers**: aceitar os valores iniciais e calibrar na F0/F2; opção de qualidade visível ao jogador (recomendo sim); sem benchmark no primeiro uso (recomendo).
+**Aviso sobre o item 14**: não existe calçado masculino no pacote Rukha93. O jogo masculino usa as mesmas 7 malhas femininas, como o próprio sample do Unity faz. Se na F0 elas ficarem estranhas no corpo M, as opções são ajustar as malhas ao pé masculino ou limitar os calçados no corpo M.
 
 ## 16. Fora do escopo
 
