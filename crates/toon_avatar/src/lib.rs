@@ -13,6 +13,7 @@ mod animation;
 mod atlas;
 mod avatar;
 mod catalog;
+mod face;
 mod lod;
 mod material;
 mod merge;
@@ -27,6 +28,10 @@ pub use atlas::{AtlasBuilt, AtlasMaterial};
 pub use avatar::{Applied, Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
 pub use catalog::{
     AvatarCatalog, AvatarLook, BodyCatalog, BodyType, CatalogEntry, ColorChoice, Slot,
+};
+pub use face::{
+    AvatarFace, AvatarFacePlugin, BLINK_DURATION, Expression, FaceAnimator, blink_amount,
+    next_blink_interval, target_weights,
 };
 pub use lod::{
     AvatarLod, DeviceInfo, DeviceInfoOverride, DeviceTier, FrameGovernor, LodConfig, LodFocus,
@@ -54,5 +59,6 @@ impl PluginGroup for ToonAvatarPlugins {
             .add(avatar::AvatarPlugin)
             .add(MergePlugin)
             .add(AvatarAnimationPlugin)
+            .add(AvatarFacePlugin)
     }
 }

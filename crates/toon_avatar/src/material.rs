@@ -299,14 +299,6 @@ fn assign_toon_materials(
         let Some(owner) = owner_of(entity, &parents, &owners) else {
             continue;
         };
-        // Skin and face pieces are drawn through the atlas material instead (see atlas.rs).
-        if crate::atlas::piece(&name.0).is_some() {
-            commands
-                .entity(entity)
-                .try_remove::<MeshMaterial3d<StandardMaterial>>()
-                .try_insert(crate::atlas::AtlasSource);
-            continue;
-        }
         let Some(def) = defs.get(name.0.as_str()) else {
             continue;
         };
@@ -317,6 +309,14 @@ fn assign_toon_materials(
             continue;
         };
         let quality = body.lod;
+        // Skin and face pieces are drawn through the atlas material instead (see atlas.rs).
+        if crate::atlas::piece(&name.0, quality).is_some() {
+            commands
+                .entity(entity)
+                .try_remove::<MeshMaterial3d<StandardMaterial>>()
+                .try_insert(crate::atlas::AtlasSource);
+            continue;
+        }
         let handle = materials
             .map
             .entry(name.0.clone())

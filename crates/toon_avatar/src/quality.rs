@@ -57,6 +57,11 @@ impl Quality {
         }
     }
 
+    /// Whether the face keeps its blend shapes (blink, expressions) at this level of detail.
+    pub fn keeps_morphs(self) -> bool {
+        self != Quality::Low
+    }
+
     pub fn normal_maps(self) -> bool {
         self != Quality::Low
     }

@@ -16,10 +16,10 @@ use std::path::{Path, PathBuf};
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
-    Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarLook, AvatarPose, AvatarWalkSpeed,
-    BodyAnimations, BodyType, DeviceTier, LodFocus, MaterialDefs, MergeEnabled,
-    QualityRenderSettingsPlugin, Slot, TierPreference, ToonAvatarPlugins, ToonSettings,
-    parse_clips,
+    Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarLook, AvatarPose,
+    AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, LodFocus, MaterialDefs,
+    MergeEnabled, QualityRenderSettingsPlugin, Slot, TierPreference, ToonAvatarPlugins,
+    ToonSettings, parse_clips,
 };
 
 fn assets_dir() -> PathBuf {
@@ -167,6 +167,7 @@ pub fn main() {
                 wardrobe_input,
                 toggles,
                 pose_input,
+                expression_input,
                 log_render_stats,
                 snapshot,
             ),
@@ -196,6 +197,10 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: Avatar
         Avatar::new(look),
         LodFocus,
         start_pose(),
+        AvatarFace {
+            expression: start_expression(),
+            blink: std::env::var("TOON_DEMO_NO_BLINK").is_err(),
+        },
         AvatarWalkSpeed(1.3),
         Transform::from_xyz(x, 0.0, 0.0),
     ));
@@ -303,6 +308,31 @@ fn start_pose() -> AvatarPose {
         Ok("sit") => AvatarPose::Sit,
         Ok("lay") => AvatarPose::Lay,
         _ => AvatarPose::Idle,
+    }
+}
+
+/// `TOON_DEMO_EXPR=happy|laugh|sad|angry|surprised` picks the starting expression.
+fn start_expression() -> Expression {
+    std::env::var("TOON_DEMO_EXPR")
+        .ok()
+        .and_then(|name| Expression::from_name(&name))
+        .unwrap_or_default()
+}
+
+/// F cycles the expression.
+fn expression_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut faces: Query<&mut AvatarFace, With<LodFocus>>,
+) {
+    if !keys.just_pressed(KeyCode::KeyF) {
+        return;
+    }
+    for mut face in &mut faces {
+        let at = Expression::ALL
+            .iter()
+            .position(|e| *e == face.expression)
+            .unwrap_or(0);
+        face.expression = Expression::ALL[(at + 1) % Expression::ALL.len()];
     }
 }
 

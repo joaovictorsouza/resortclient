@@ -13,11 +13,7 @@
 use bevy::{
     asset::embedded_asset,
     gltf::GltfMaterialName,
-    mesh::{
-        VertexAttributeValues,
-        morph::{MeshMorphWeights, MorphAttributes},
-        skinning::SkinnedMesh,
-    },
+    mesh::{VertexAttributeValues, morph::MeshMorphWeights, skinning::SkinnedMesh},
     prelude::*,
     reflect::TypePath,
     render::render_resource::{AsBindGroup, ShaderType},
@@ -53,7 +49,32 @@ pub struct Piece {
     has_normal: bool,
 }
 
-pub fn piece(name: &str) -> Option<Piece> {
+/// Whether a glTF material belongs to the head (face skin, eyes, brows, lashes, mouth).
+fn is_head_piece(name: &str) -> bool {
+    matches!(
+        name,
+        "mat_face_F"
+            | "mat_face_M"
+            | "mat_eye"
+            | "mat_mouth"
+            | "mat_eye_highlight"
+            | "mat_eyelashes"
+            | "mat_eyebrows"
+    )
+}
+
+/// The atlas cell of a material when it is drawn through the atlas at `quality`. The head is
+/// left out where the face has blend shapes (blink and expressions): a merged mesh would not
+/// show them, so those pieces keep their own meshes.
+pub fn piece(name: &str, quality: Quality) -> Option<Piece> {
+    if is_head_piece(name) && quality.keeps_morphs() {
+        return None;
+    }
+    piece_info(name)
+}
+
+/// The atlas cell of a material, whatever the quality.
+fn piece_info(name: &str) -> Option<Piece> {
     let p = |index, cell, origin, collapse, has_normal| Piece {
         index,
         cell,
@@ -118,12 +139,10 @@ pub struct AtlasSource;
 
 /// The merged mesh that replaces the atlas pieces.
 #[derive(Component)]
-struct AtlasMerged {
-    body: Entity,
+pub(crate) struct AtlasMerged {
+    pub(crate) body: Entity,
     // Keeps the merged mesh asset alive.
     _mesh: Handle<Mesh>,
-    /// Original mesh whose morph weights drive this one.
-    morph_source: Option<Entity>,
 }
 
 /// State of the atlas material and merged mesh of one body.
@@ -167,10 +186,7 @@ impl Plugin for AtlasPlugin {
     fn build(&self, app: &mut App) {
         embedded_asset!(app, "shaders/toon_atlas.wesl");
         app.add_plugins(MaterialPlugin::<AtlasMaterial>::default())
-            .add_systems(
-                Update,
-                (update_atlas_params, merge_atlas, sync_atlas_morphs).chain(),
-            );
+            .add_systems(Update, (update_atlas_params, merge_atlas).chain());
     }
 }
 
@@ -185,7 +201,7 @@ fn atlas_params(
     for index in 0..PIECES {
         let name = piece_name(index, gender);
         let def = defs.get(&name)?;
-        let info = piece(&name)?;
+        let info = piece_info(&name)?;
         // The atlas always supplies a mask (the white cell for flat pieces).
         let mut flags = FLAG_HAS_MASK;
         if def.mode == "flat" || def.mask.is_none() {
@@ -254,7 +270,6 @@ fn update_atlas_params(
 
 struct SourcePiece {
     mesh: Mesh,
-    vertices: usize,
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -283,6 +298,7 @@ fn merge_atlas(
     merged: Query<(Entity, &AtlasMerged)>,
     mut bodies: Query<(Entity, &Body, &mut AtlasBuilt)>,
     avatars: Query<&Avatar>,
+    body_lods: Query<&Body>,
 ) {
     // Visible pieces whose mesh data is loaded, by body.
     let mut visible_by_avatar: std::collections::HashMap<Entity, Vec<Entity>> =
@@ -302,7 +318,10 @@ fn merge_atlas(
                 .iter()
                 .any(|e| e.body == owning_body && e.hides.contains(&p.0))
         });
-        if covered || meshes.get(&mesh.0).is_none() || piece(&name.0).is_none() {
+        let Some(quality) = body_lods.get(owning_body).ok().map(|b| b.lod) else {
+            continue;
+        };
+        if covered || meshes.get(&mesh.0).is_none() || piece(&name.0, quality).is_none() {
             continue;
         }
         visible_by_avatar
@@ -336,17 +355,15 @@ fn merge_atlas(
         let (skin, joints) = (first.2, first.2.joints.clone());
 
         // Remap UVs into the atlas, tag each vertex with its piece id.
-        let mut pieces: Vec<(SourcePiece, Option<Vec<MorphAttributes>>)> = Vec::new();
-        let mut morph_names: Option<Vec<String>> = None;
-        let mut morph_source: Option<(Entity, Vec<f32>)> = None;
+        let mut pieces: Vec<SourcePiece> = Vec::new();
         for entity in &visible {
-            let Ok((_, mesh, skin_i, name, _, morph_weights)) = sources.get(*entity) else {
+            let Ok((_, mesh, skin_i, name, _, _)) = sources.get(*entity) else {
                 continue;
             };
             if skin_i.joints != joints {
                 continue;
             }
-            let (Some(info), Some(source)) = (piece(&name.0), meshes.get(&mesh.0)) else {
+            let (Some(info), Some(source)) = (piece(&name.0, quality), meshes.get(&mesh.0)) else {
                 continue;
             };
             let mut m = source.clone();
@@ -372,24 +389,14 @@ fn merge_atlas(
                 Mesh::ATTRIBUTE_COLOR,
                 vec![[info.index as f32, 0.0, 0.0, 1.0]; vertices],
             );
-            let morph = m.morph_targets().cloned();
-            if morph.is_some() && morph_names.is_none() {
-                morph_names = m.morph_target_names().map(|n| n.to_vec());
-            }
-            if morph.is_some()
-                && morph_source.is_none()
-                && let Some(MeshMorphWeights::Value { weights }) = morph_weights
-            {
-                morph_source = Some((*entity, weights.clone()));
-            }
-            pieces.push((SourcePiece { mesh: m, vertices }, morph));
+            pieces.push(SourcePiece { mesh: m });
         }
-        let Some(((first_piece, _), rest)) = pieces.split_first() else {
+        let Some((first_piece, rest)) = pieces.split_first() else {
             continue;
         };
         let mut merged_mesh = first_piece.mesh.clone();
         let mut failed = false;
-        for (p, _) in rest {
+        for p in rest {
             if let Err(err) = merged_mesh.merge(&p.mesh) {
                 warn!("atlas merge failed: {err}");
                 failed = true;
@@ -398,32 +405,6 @@ fn merge_atlas(
         }
         if failed {
             continue;
-        }
-
-        // Morph targets are stored target by target; pad pieces that have fewer (or none).
-        let targets = pieces
-            .iter()
-            .filter_map(|(p, m)| m.as_ref().map(|v| v.len() / p.vertices.max(1)))
-            .max()
-            .unwrap_or(0);
-        if targets > 0 {
-            let mut all: Vec<MorphAttributes> = Vec::new();
-            for t in 0..targets {
-                for (p, morph) in &pieces {
-                    match morph {
-                        Some(v) if v.len() / p.vertices.max(1) > t => {
-                            all.extend_from_slice(&v[t * p.vertices..(t + 1) * p.vertices]);
-                        }
-                        _ => {
-                            all.extend(std::iter::repeat_n(MorphAttributes::default(), p.vertices))
-                        }
-                    }
-                }
-            }
-            merged_mesh.set_morph_targets(all);
-            if let Some(names) = morph_names {
-                merged_mesh.set_morph_target_names(names);
-            }
         }
 
         // The material belongs to the avatar; rebuild it when the body type or the quality changes.
@@ -465,38 +446,10 @@ fn merge_atlas(
             Transform::IDENTITY,
             ChildOf(body),
         ));
-        let source_entity = morph_source.as_ref().map(|(e, _)| *e);
-        if targets > 0 {
-            let weights = morph_source
-                .map(|(_, w)| w)
-                .unwrap_or_else(|| vec![0.0; targets]);
-            entity.insert(MeshMorphWeights::Value { weights });
-        }
         entity.insert(AtlasMerged {
             body,
             _mesh: handle,
-            morph_source: source_entity,
         });
         info!("atlas merge: {} pieces in one draw call", pieces.len());
-    }
-}
-
-/// Forwards the morph weights of the original face mesh to the merged one, so animation that
-/// drives the face keeps working.
-fn sync_atlas_morphs(
-    mut merged: Query<(&AtlasMerged, &mut MeshMorphWeights)>,
-    sources: Query<&MeshMorphWeights, Without<AtlasMerged>>,
-) {
-    for (info, mut weights) in &mut merged {
-        let Some(source) = info.morph_source.and_then(|e| sources.get(e).ok()) else {
-            continue;
-        };
-        if let (MeshMorphWeights::Value { weights: dst }, MeshMorphWeights::Value { weights: src }) =
-            (&mut *weights, source)
-            && dst != src
-            && dst.len() == src.len()
-        {
-            dst.copy_from_slice(src);
-        }
     }
 }

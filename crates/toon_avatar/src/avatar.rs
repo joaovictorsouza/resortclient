@@ -32,6 +32,7 @@ use crate::{
     animation::AvatarPose,
     atlas::{AtlasBuilt, AtlasMaterial},
     catalog::{AvatarCatalog, AvatarLook, BodyType, CatalogEntry, Slot},
+    face::AvatarFace,
     lod::AvatarLod,
     material::{AvatarMaterials, ToonMaterial},
     quality::Quality,
@@ -61,7 +62,7 @@ const BODY_PARTS: &[(&str, u32)] = &[
 /// A character. Insert it on an entity (with a `Transform`) and the plugin builds the body,
 /// the garments and the attachments underneath.
 #[derive(Component, Clone, Debug)]
-#[require(Transform, Visibility, Applied, AvatarLod, AvatarPose)]
+#[require(Transform, Visibility, Applied, AvatarLod, AvatarPose, AvatarFace)]
 pub struct Avatar {
     pub look: AvatarLook,
 }
@@ -561,6 +562,7 @@ fn settle_bodies(
                 if let Some(old) = applied.shown.take() {
                     commands.entity(old).try_despawn();
                 }
+                debug!("body {current:?} settled");
                 applied.shown = Some(current);
             }
         }
