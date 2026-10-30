@@ -16,8 +16,10 @@ use std::path::{Path, PathBuf};
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
-    Avatar, AvatarCatalog, AvatarLook, BodyType, DeviceTier, LodFocus, MaterialDefs, MergeEnabled,
+    Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarLook, AvatarPose, AvatarWalkSpeed,
+    BodyAnimations, BodyType, DeviceTier, LodFocus, MaterialDefs, MergeEnabled,
     QualityRenderSettingsPlugin, Slot, TierPreference, ToonAvatarPlugins, ToonSettings,
+    parse_clips,
 };
 
 fn assets_dir() -> PathBuf {
@@ -48,6 +50,21 @@ fn load_data(dir: &Path) -> (AvatarCatalog, MaterialDefs) {
         catalog,
         MaterialDefs::from_json(&documents).expect("the material files are valid"),
     )
+}
+
+/// The animation library the pipeline wrote (`characters/animations/{F,M}`), if there is one.
+fn load_animations(dir: &Path) -> Option<AvatarAnimationConfig> {
+    let body = |letter: &str| -> Option<BodyAnimations> {
+        let clips = read(dir, &format!("characters/animations/{letter}/clips.json"))?;
+        Some(BodyAnimations {
+            gltf_path: format!("characters/animations/{letter}/character_anims.glb"),
+            clips: parse_clips(&clips).ok()?,
+        })
+    };
+    Some(AvatarAnimationConfig {
+        female: body("F")?,
+        male: body("M")?,
+    })
 }
 
 /// The avatar the demo starts with.
@@ -120,7 +137,9 @@ pub fn main() {
     let dir = assets_dir();
     let (catalog, materials) = load_data(&dir);
     let look = starting_look(&catalog);
-    App::new()
+    let animations = load_animations(&dir);
+    let mut app = App::new();
+    app
         // Entities can be despawned (body swap, quality change) while commands for them are
         // still queued; that must not take the demo down.
         .set_error_handler(bevy::ecs::error::warn)
@@ -144,9 +163,18 @@ pub fn main() {
         )
         .add_systems(
             Update,
-            (wardrobe_input, toggles, log_render_stats, snapshot),
-        )
-        .run();
+            (
+                wardrobe_input,
+                toggles,
+                pose_input,
+                log_render_stats,
+                snapshot,
+            ),
+        );
+    if let Some(animations) = animations {
+        app.insert_resource(animations);
+    }
+    app.run();
 }
 
 fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: AvatarLook) {
@@ -167,6 +195,8 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: Avatar
     commands.spawn((
         Avatar::new(look),
         LodFocus,
+        start_pose(),
+        AvatarWalkSpeed(1.3),
         Transform::from_xyz(x, 0.0, 0.0),
     ));
     let mut camera = commands.spawn((
@@ -264,6 +294,31 @@ fn wardrobe_input(
     // A body always needs a face.
     let next = next_item(&names, avatar.look.item(slot), slot != Slot::Face);
     avatar.look.set_item(slot, next);
+}
+
+/// `TOON_DEMO_POSE=idle|walk|sit|lay` picks the starting pose.
+fn start_pose() -> AvatarPose {
+    match std::env::var("TOON_DEMO_POSE").as_deref() {
+        Ok("walk") => AvatarPose::Walk,
+        Ok("sit") => AvatarPose::Sit,
+        Ok("lay") => AvatarPose::Lay,
+        _ => AvatarPose::Idle,
+    }
+}
+
+/// P cycles the pose: idle, walk, sit, lay.
+fn pose_input(keys: Res<ButtonInput<KeyCode>>, mut poses: Query<&mut AvatarPose, With<LodFocus>>) {
+    if !keys.just_pressed(KeyCode::KeyP) {
+        return;
+    }
+    for mut pose in &mut poses {
+        *pose = match *pose {
+            AvatarPose::Idle => AvatarPose::Walk,
+            AvatarPose::Walk => AvatarPose::Sit,
+            AvatarPose::Sit => AvatarPose::Lay,
+            AvatarPose::Lay => AvatarPose::Idle,
+        };
+    }
 }
 
 /// O = outline, M = mesh merge, Q = quality tier.

@@ -29,6 +29,7 @@ use bevy::{
 };
 
 use crate::{
+    animation::AvatarPose,
     atlas::{AtlasBuilt, AtlasMaterial},
     catalog::{AvatarCatalog, AvatarLook, BodyType, CatalogEntry, Slot},
     lod::AvatarLod,
@@ -60,7 +61,7 @@ const BODY_PARTS: &[(&str, u32)] = &[
 /// A character. Insert it on an entity (with a `Transform`) and the plugin builds the body,
 /// the garments and the attachments underneath.
 #[derive(Component, Clone, Debug)]
-#[require(Transform, Visibility, Applied, AvatarLod)]
+#[require(Transform, Visibility, Applied, AvatarLod, AvatarPose)]
 pub struct Avatar {
     pub look: AvatarLook,
 }

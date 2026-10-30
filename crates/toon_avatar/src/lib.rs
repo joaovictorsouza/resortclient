@@ -9,6 +9,7 @@
 //! read through the app's `AssetServer` using the paths in the catalog and material
 //! definitions, so a game can serve them from a CDN. Shaders are embedded in the binary.
 
+mod animation;
 mod atlas;
 mod avatar;
 mod catalog;
@@ -17,6 +18,11 @@ mod material;
 mod merge;
 mod quality;
 
+pub use animation::{
+    AvatarAnimationConfig, AvatarAnimationLibrary, AvatarAnimationPlugin, AvatarAnimator,
+    AvatarPose, AvatarWalkSpeed, BodyAnimations, ClipMeta, RIG_ROOT_NAME, parse_clips, tick_due,
+    walk_playback_speed,
+};
 pub use atlas::{AtlasBuilt, AtlasMaterial};
 pub use avatar::{Applied, Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
 pub use catalog::{
@@ -47,5 +53,6 @@ impl PluginGroup for ToonAvatarPlugins {
             .add(atlas::AtlasPlugin)
             .add(avatar::AvatarPlugin)
             .add(MergePlugin)
+            .add(AvatarAnimationPlugin)
     }
 }
