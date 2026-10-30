@@ -17,12 +17,13 @@ mod face;
 mod lod;
 mod material;
 mod merge;
+mod props;
 mod quality;
 
 pub use animation::{
     AvatarAnimationConfig, AvatarAnimationLibrary, AvatarAnimationPlugin, AvatarAnimator,
-    AvatarPose, AvatarWalkSpeed, BodyAnimations, ClipMeta, RIG_ROOT_NAME, parse_clips, tick_due,
-    walk_playback_speed,
+    AvatarPose, AvatarWalkSpeed, BodyAnimations, ClipMeta, Grip, RIG_ROOT_NAME, parse_clips,
+    parse_grip, tick_due, walk_playback_speed,
 };
 pub use atlas::{AtlasBuilt, AtlasMaterial};
 pub use avatar::{Applied, Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
@@ -43,6 +44,7 @@ pub use material::{
     ToonParams, ToonSettings,
 };
 pub use merge::{MergeEnabled, MergePlugin};
+pub use props::{AvatarHolding, AvatarPropsPlugin, HeldProp, HeldPropEntity, prop_transform};
 pub use quality::{Quality, QualityRenderSettingsPlugin};
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
@@ -60,5 +62,6 @@ impl PluginGroup for ToonAvatarPlugins {
             .add(MergePlugin)
             .add(AvatarAnimationPlugin)
             .add(AvatarFacePlugin)
+            .add(AvatarPropsPlugin)
     }
 }

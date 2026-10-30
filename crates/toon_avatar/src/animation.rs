@@ -44,6 +44,10 @@ pub enum AvatarPose {
     Walk,
     Sit,
     Lay,
+    /// Bringing a held cup to the mouth while standing; ends by itself back in `Idle`.
+    Drink,
+    /// The same, seated; ends back in `Sit`.
+    DrinkSit,
 }
 
 impl AvatarPose {
@@ -53,6 +57,26 @@ impl AvatarPose {
             AvatarPose::Walk => "walk",
             AvatarPose::Sit => "sit",
             AvatarPose::Lay => "lay",
+            AvatarPose::Drink => "drink",
+            AvatarPose::DrinkSit => "drink_sit",
+        }
+    }
+
+    /// The pose to drink from, if the avatar can drink from this one (standing still or seated).
+    pub fn drinking(self) -> Option<Self> {
+        match self {
+            AvatarPose::Idle => Some(AvatarPose::Drink),
+            AvatarPose::Sit => Some(AvatarPose::DrinkSit),
+            _ => None,
+        }
+    }
+
+    /// The pose a one-shot gesture returns to when it ends.
+    pub fn after_gesture(self) -> Option<Self> {
+        match self {
+            AvatarPose::Drink => Some(AvatarPose::Idle),
+            AvatarPose::DrinkSit => Some(AvatarPose::Sit),
+            _ => None,
         }
     }
 }
@@ -77,6 +101,39 @@ pub struct ClipMeta {
 #[derive(Debug, Deserialize)]
 struct ClipsFile {
     clips: HashMap<String, ClipMeta>,
+    #[serde(default)]
+    grip: Option<GripsFile>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GripsFile {
+    right: GripFile,
+}
+
+#[derive(Debug, Deserialize)]
+struct GripFile {
+    translation_cm: [f32; 3],
+    rotation: [f32; 4],
+}
+
+/// Where a held prop sits in the right hand.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Grip {
+    /// The centre of the prop in the hand bone's frame, in the skeleton's centimetres.
+    pub translation_cm: Vec3,
+    /// From the prop's frame (+Y up) to the hand bone's frame.
+    pub rotation: Quat,
+}
+
+/// Parses the `grip` section of a `clips.json`, if it has one.
+pub fn parse_grip(json: &str) -> Option<Grip> {
+    let file = serde_json::from_str::<ClipsFile>(json).ok()?;
+    let g = file.grip?.right;
+    Some(Grip {
+        translation_cm: Vec3::from_array(g.translation_cm),
+        rotation: Quat::from_xyzw(g.rotation[0], g.rotation[1], g.rotation[2], g.rotation[3])
+            .normalize(),
+    })
 }
 
 /// Parses a `clips.json` written by the animation pipeline.
@@ -90,6 +147,8 @@ pub struct BodyAnimations {
     /// Asset path of the rig-only glTF holding the clips.
     pub gltf_path: String,
     pub clips: HashMap<String, ClipMeta>,
+    /// Where a held prop sits in the right hand (from the `grip` of `clips.json`).
+    pub grip: Option<Grip>,
 }
 
 /// Where the animations are. Insert it when the clip metadata is known; the plugin loads the
@@ -159,6 +218,7 @@ impl Plugin for AvatarAnimationPlugin {
                 build_graphs,
                 bind_skeletons,
                 drive_animators,
+                finish_gestures,
             )
                 .chain(),
         );
@@ -427,6 +487,33 @@ fn drive_animators(
     }
 }
 
+/// A one-shot gesture (drinking) hands the avatar back to its base pose when its clip ends.
+fn finish_gestures(
+    config: Option<Res<AvatarAnimationConfig>>,
+    animators: Query<&AvatarAnimator>,
+    mut avatars: Query<(&Avatar, &mut AvatarPose)>,
+) {
+    let Some(config) = config else {
+        return;
+    };
+    for animator in &animators {
+        let Ok((avatar, mut pose)) = avatars.get_mut(animator.avatar) else {
+            continue;
+        };
+        let (Some(back), true) = (pose.after_gesture(), animator.current == Some(*pose)) else {
+            continue;
+        };
+        let duration = config
+            .of(avatar.look.body)
+            .clips
+            .get(pose.clip_name())
+            .map_or(0.0, |m| m.duration_s);
+        if animator.clock >= duration - 1e-3 {
+            *pose = back;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -460,8 +547,29 @@ mod tests {
     }
 
     #[test]
+    fn only_a_standing_or_seated_avatar_can_drink_and_the_gesture_returns_to_its_base() {
+        assert_eq!(AvatarPose::Idle.drinking(), Some(AvatarPose::Drink));
+        assert_eq!(AvatarPose::Sit.drinking(), Some(AvatarPose::DrinkSit));
+        assert_eq!(AvatarPose::Walk.drinking(), None);
+        assert_eq!(AvatarPose::Lay.drinking(), None);
+        assert_eq!(AvatarPose::Drink.after_gesture(), Some(AvatarPose::Idle));
+        assert_eq!(AvatarPose::DrinkSit.after_gesture(), Some(AvatarPose::Sit));
+        assert_eq!(AvatarPose::Idle.after_gesture(), None);
+    }
+
+    #[test]
+    fn the_grip_is_read_from_clips_json() {
+        let grip = parse_grip(r#"{"clips":{},"grip":{"right":{"translation_cm":[-3.5,3.0,0.0],"rotation":[0,0,0,1]}}}"#).unwrap();
+        assert_eq!(grip.translation_cm, Vec3::new(-3.5, 3.0, 0.0));
+        assert_eq!(grip.rotation, Quat::IDENTITY);
+        assert_eq!(parse_grip(r#"{"clips":{}}"#), None);
+    }
+
+    #[test]
     fn every_pose_has_a_clip_name() {
         for pose in [
+            AvatarPose::Drink,
+            AvatarPose::DrinkSit,
             AvatarPose::Idle,
             AvatarPose::Walk,
             AvatarPose::Sit,

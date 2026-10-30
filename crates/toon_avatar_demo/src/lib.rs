@@ -16,10 +16,10 @@ use std::path::{Path, PathBuf};
 
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
-    Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarLook, AvatarPose,
-    AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, LodFocus, MaterialDefs,
-    MergeEnabled, QualityRenderSettingsPlugin, Slot, TierPreference, ToonAvatarPlugins,
-    ToonSettings, parse_clips,
+    Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarHolding, AvatarLook,
+    AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, HeldProp,
+    LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, Slot, TierPreference,
+    ToonAvatarPlugins, ToonSettings, parse_clips, parse_grip,
 };
 
 fn assets_dir() -> PathBuf {
@@ -58,6 +58,7 @@ fn load_animations(dir: &Path) -> Option<AvatarAnimationConfig> {
         let clips = read(dir, &format!("characters/animations/{letter}/clips.json"))?;
         Some(BodyAnimations {
             gltf_path: format!("characters/animations/{letter}/character_anims.glb"),
+            grip: parse_grip(&clips),
             clips: parse_clips(&clips).ok()?,
         })
     };
@@ -168,6 +169,8 @@ pub fn main() {
                 toggles,
                 pose_input,
                 expression_input,
+                prop_input,
+                scripted_drink,
                 log_render_stats,
                 snapshot,
             ),
@@ -197,6 +200,7 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: Avatar
         Avatar::new(look),
         LodFocus,
         start_pose(),
+        AvatarHolding(start_prop()),
         AvatarFace {
             expression: start_expression(),
             blink: std::env::var("TOON_DEMO_NO_BLINK").is_err(),
@@ -307,6 +311,8 @@ fn start_pose() -> AvatarPose {
         Ok("walk") => AvatarPose::Walk,
         Ok("sit") => AvatarPose::Sit,
         Ok("lay") => AvatarPose::Lay,
+        Ok("drink") => AvatarPose::Drink,
+        Ok("drink_sit") => AvatarPose::DrinkSit,
         _ => AvatarPose::Idle,
     }
 }
@@ -336,6 +342,63 @@ fn expression_input(
     }
 }
 
+/// `TOON_DEMO_HOLD=cup|can` makes the avatar start with a prop in the right hand.
+fn start_prop() -> Option<HeldProp> {
+    prop_by_name(std::env::var("TOON_DEMO_HOLD").ok()?.as_str())
+}
+
+fn prop_by_name(name: &str) -> Option<HeldProp> {
+    match name {
+        "cup" | "can" => Some(HeldProp::new(format!("props/{name}.glb"))),
+        _ => None,
+    }
+}
+
+/// V cycles the held prop (none, cup, can); C drinks from it.
+fn prop_input(
+    keys: Res<ButtonInput<KeyCode>>,
+    mut avatars: Query<(&mut AvatarHolding, &mut AvatarPose), With<LodFocus>>,
+) {
+    for (mut holding, mut pose) in &mut avatars {
+        if keys.just_pressed(KeyCode::KeyV) {
+            let next = match holding.0.as_ref().map(|p| p.scene.as_str()) {
+                None => "cup",
+                Some("props/cup.glb") => "can",
+                _ => "",
+            };
+            holding.0 = prop_by_name(next);
+        }
+        if keys.just_pressed(KeyCode::KeyC)
+            && holding.0.is_some()
+            && let Some(drinking) = pose.drinking()
+        {
+            *pose = drinking;
+        }
+    }
+}
+
+/// `TOON_DEMO_DRINK_AT=<seconds>` starts the drinking gesture at that time (for screenshots).
+fn scripted_drink(
+    time: Res<Time>,
+    mut poses: Query<&mut AvatarPose, With<LodFocus>>,
+    mut done: Local<bool>,
+) {
+    let Some(at) = std::env::var("TOON_DEMO_DRINK_AT")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+    else {
+        return;
+    };
+    if !*done && time.elapsed_secs() >= at {
+        *done = true;
+        for mut pose in &mut poses {
+            if let Some(drinking) = pose.drinking() {
+                *pose = drinking;
+            }
+        }
+    }
+}
+
 /// P cycles the pose: idle, walk, sit, lay.
 fn pose_input(keys: Res<ButtonInput<KeyCode>>, mut poses: Query<&mut AvatarPose, With<LodFocus>>) {
     if !keys.just_pressed(KeyCode::KeyP) {
@@ -347,6 +410,7 @@ fn pose_input(keys: Res<ButtonInput<KeyCode>>, mut poses: Query<&mut AvatarPose,
             AvatarPose::Walk => AvatarPose::Sit,
             AvatarPose::Sit => AvatarPose::Lay,
             AvatarPose::Lay => AvatarPose::Idle,
+            AvatarPose::Drink | AvatarPose::DrinkSit => AvatarPose::Idle,
         };
     }
 }

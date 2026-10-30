@@ -35,6 +35,7 @@ use crate::{
     face::AvatarFace,
     lod::AvatarLod,
     material::{AvatarMaterials, ToonMaterial},
+    props::{AvatarHolding, PropApplied},
     quality::Quality,
 };
 
@@ -62,7 +63,16 @@ const BODY_PARTS: &[(&str, u32)] = &[
 /// A character. Insert it on an entity (with a `Transform`) and the plugin builds the body,
 /// the garments and the attachments underneath.
 #[derive(Component, Clone, Debug)]
-#[require(Transform, Visibility, Applied, AvatarLod, AvatarPose, AvatarFace)]
+#[require(
+    Transform,
+    Visibility,
+    Applied,
+    AvatarLod,
+    AvatarPose,
+    AvatarFace,
+    AvatarHolding,
+    PropApplied
+)]
 pub struct Avatar {
     pub look: AvatarLook,
 }
@@ -86,6 +96,11 @@ pub struct Applied {
 }
 
 impl Applied {
+    /// The newest body (the one the avatar is building or showing); props and attachments go on it.
+    pub fn current_body(&self) -> Option<Entity> {
+        self.current.map(|(body, _, _)| body)
+    }
+
     /// The body currently shown to the player, if there is one yet.
     pub fn shown_body(&self) -> Option<Entity> {
         self.shown

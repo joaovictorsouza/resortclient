@@ -32,6 +32,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cc_config as cc  # noqa: E402
+import drink as dk  # noqa: E402
 import glb_tools as gt  # noqa: E402
 import rig_math as rm  # noqa: E402
 
@@ -224,6 +225,7 @@ def build(body_glb, head_glb, walk_fbx, sit_fbx, lay_fbx, blender, out_dir):
     print(f"[idle] frame {standing['frame']} of the walk, {idle_times[-1]:.1f}s breathing")
 
     # --- sit / lay: held frames
+    held = {}
     for name, fbx, frame, ground in (("sit", sit_fbx, 185, False), ("lay", lay_fbx, "last", True)):
         sampled = sample_fbx(blender, fbx, frame, os.path.join(work, f"{name}.json"))
         rotations, local_t = retarget.pose(source_for(sampled, sampled["frames"][0]))
@@ -237,17 +239,40 @@ def build(body_glb, head_glb, walk_fbx, sit_fbx, lay_fbx, blender, out_dir):
             seat = [v[1] for v in verts if v[2] <= cc.SEAT_CONTACT_MAX_Z_CM]
             contact = min(seat)
         zs = [v[2] for v in verts]
+        held[name] = (rotations, local_t, contact)
         clips[name] = tracks_for(rig, gltf, [0.0, cc.STATIC_CLIP_SECONDS], [(rotations, local_t)] * 2)
         meta[name] = cc.clip_metadata(True, cc.STATIC_CLIP_SECONDS, contact / 100.0, model_to_world)
         print(f"[{name}] contact={contact:.2f} cm, body middle along Z {(min(zs) + max(zs)) / 2:.2f} cm "
               f"= {(min(zs) + max(zs)) / 200.0 * model_to_world:.4f} world units, y range {min(v[1] for v in verts):.1f}..{max(v[1] for v in verts):.1f}")
+
+    # --- drink: the right hand brings a cup to the mouth, from a standing and from a seated base pose
+    head_rest = retarget.world_r[rig.index[dk.HEAD]]
+    for name, (base_rot, base_t, contact_m) in (
+        ("drink", (base_rot, base_t, 0.0)),
+        ("drink_sit", (held["sit"][0], held["sit"][1], held["sit"][2] / 100.0)),
+    ):
+        keys = dk.drink_keys(rig, base_rot, {cc.CC_HIPS: base_t}, head_rest)
+        clips[name] = tracks_for(rig, gltf, [k[0] for k in keys], [(k[1], base_t) for k in keys])
+        meta[name] = cc.clip_metadata(False, keys[-1][0], contact_m, model_to_world)
+        print(f"[{name}] {len(keys)} keys, {keys[-1][0]:.1f}s")
 
     os.makedirs(out_dir, exist_ok=True)
     glb_path = os.path.join(out_dir, "character_anims.glb")
     write_animation_glb(glb_path, (gltf, binary), clips)
     print(f"Exported {glb_path} ({os.path.getsize(glb_path)} bytes)")
     with open(os.path.join(out_dir, "clips.json"), "w", encoding="utf-8") as f:
-        json.dump({"version": 3, "model_height_m": round(height_cm / 100.0, 4), "clips": meta}, f, indent=2)
+        json.dump(
+            {
+                "version": 4,
+                "model_height_m": round(height_cm / 100.0, 4),
+                "clips": meta,
+                # Where a held prop sits in the right hand: its centre (cm, hand frame) and the rotation
+                # from the prop's frame (+Y up) to the hand frame, so it is upright-ish at the drinking pose.
+                "grip": {"right": {"translation_cm": list(dk.CUP_CENTRE_IN_HAND), "rotation": [round(c, 5) for c in dk.grip_rotation()]}},
+            },
+            f,
+            indent=2,
+        )
         f.write("\n")
 
 

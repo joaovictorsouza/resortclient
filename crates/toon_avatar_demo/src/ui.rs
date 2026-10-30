@@ -27,6 +27,8 @@ const BUTTONS: &[(&str, KeyCode)] = &[
     ("Quality", KeyCode::KeyQ),
     ("Pose", KeyCode::KeyP),
     ("Emote", KeyCode::KeyF),
+    ("Prop", KeyCode::KeyV),
+    ("Drink", KeyCode::KeyC),
 ];
 
 /// sRGB picker values the swatches step through.
