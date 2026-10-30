@@ -193,6 +193,7 @@ fn ghost_walls_in_the_way(
     cameras: Query<&GlobalTransform, With<crate::camera::MainRoomCamera>>,
     avatars: Query<(&crate::avatar::Avatar, &GlobalTransform)>,
     mut walls: Query<(&WallBox, &mut MeshMaterial3d<StandardMaterial>), With<RoomWall>>,
+    mut toon_walls: Query<(&WallBox, &mut toon_avatar::SceneToon), With<RoomWall>>,
 ) {
     let Some(wall_materials) = wall_materials else {
         return;
@@ -213,6 +214,18 @@ fn ghost_walls_in_the_way(
         };
         if material.0 != *wanted {
             material.0 = wanted.clone();
+        }
+    }
+    // With the cartoon style on, a wall's standard material lives in `SceneToon`: change that one
+    // and the style swaps the toon material to match.
+    for (wall, mut toon) in toon_walls.iter_mut() {
+        let wanted = if segment_hits_box(from, to, wall.center, wall.half) {
+            &wall_materials.ghost
+        } else {
+            &wall_materials.solid
+        };
+        if toon.original != *wanted {
+            toon.original = wanted.clone();
         }
     }
 }

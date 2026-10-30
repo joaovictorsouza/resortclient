@@ -18,8 +18,8 @@ use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
     Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarHolding, AvatarLook,
     AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, HeldProp,
-    LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, Slot, TierPreference,
-    ToonAvatarPlugins, ToonSettings, parse_clips, parse_grip,
+    LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, SceneStyle, Slot,
+    TierPreference, ToonAvatarPlugins, ToonSettings, parse_clips, parse_grip,
 };
 
 fn assets_dir() -> PathBuf {
@@ -158,8 +158,11 @@ pub fn main() {
         .insert_resource(ClearColor(Color::srgb(0.25, 0.3, 0.45)))
         .add_systems(
             Startup,
-            move |commands: Commands, images: ResMut<Assets<Image>>| {
-                setup(commands, images, look.clone())
+            move |commands: Commands,
+                  images: ResMut<Assets<Image>>,
+                  meshes: ResMut<Assets<Mesh>>,
+                  materials: ResMut<Assets<StandardMaterial>>| {
+                setup(commands, images, meshes, materials, look.clone())
             },
         )
         .add_systems(
@@ -181,7 +184,62 @@ pub fn main() {
     app.run();
 }
 
-fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>, look: AvatarLook) {
+/// A floor and a few boxes with ordinary `StandardMaterial`s, to try the scene style on
+/// (`TOON_DEMO_SCENE=1` adds them; `TOON_DEMO_SCENE_STYLE=cartoon` turns the cartoon look on, K flips it).
+fn spawn_demo_scene(
+    commands: &mut Commands,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    let floor = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.75, 0.62, 0.45),
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(6.0, 0.1, 6.0))),
+        MeshMaterial3d(floor),
+        Transform::from_xyz(0.0, -0.05, 0.0),
+    ));
+    let sofa = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.25, 0.45, 0.8),
+        perceptual_roughness: 0.4,
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.6, 0.5, 0.7))),
+        MeshMaterial3d(sofa.clone()),
+        Transform::from_xyz(1.6, 0.25, -1.0),
+    ));
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(1.6, 0.5, 0.2))),
+        MeshMaterial3d(sofa),
+        Transform::from_xyz(1.6, 0.75, -1.25),
+    ));
+    let wall = materials.add(StandardMaterial {
+        base_color: Color::srgba(0.9, 0.9, 0.95, 0.35),
+        alpha_mode: AlphaMode::Blend,
+        ..default()
+    });
+    commands.spawn((
+        Mesh3d(meshes.add(Cuboid::new(2.0, 1.8, 0.1))),
+        MeshMaterial3d(wall),
+        Transform::from_xyz(-1.8, 0.9, -1.5),
+    ));
+}
+
+fn setup(
+    mut commands: Commands,
+    mut images: ResMut<Assets<Image>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    look: AvatarLook,
+) {
+    if std::env::var("TOON_DEMO_SCENE").is_ok() {
+        spawn_demo_scene(&mut commands, &mut meshes, &mut materials);
+        commands.insert_resource(SceneStyle {
+            cartoon: std::env::var("TOON_DEMO_SCENE_STYLE").is_ok_and(|v| v == "cartoon"),
+        });
+    }
     // `TOON_DEMO_SECOND=1` adds a second avatar with another body, skin and outfit colour, to
     // check that colours do not leak between avatars that wear the same items.
     if std::env::var("TOON_DEMO_SECOND").is_ok() {
@@ -419,10 +477,14 @@ fn pose_input(keys: Res<ButtonInput<KeyCode>>, mut poses: Query<&mut AvatarPose,
 fn toggles(
     keys: Res<ButtonInput<KeyCode>>,
     mut settings: ResMut<ToonSettings>,
+    mut scene: ResMut<SceneStyle>,
     mut merge: ResMut<MergeEnabled>,
     tier: Option<Res<DeviceTier>>,
     mut preference: ResMut<TierPreference>,
 ) {
+    if keys.just_pressed(KeyCode::KeyK) {
+        scene.cartoon = !scene.cartoon;
+    }
     if keys.just_pressed(KeyCode::KeyO) {
         settings.outline = !settings.outline;
     }

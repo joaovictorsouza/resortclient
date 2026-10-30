@@ -128,6 +128,28 @@ fn debug_emote_shortcuts(
     }
 }
 
+/// Debug shortcut: F10 turns the cartoon look of rooms and objects on and off.
+#[cfg(debug_assertions)]
+fn debug_toggle_scene_style(
+    keys: Res<ButtonInput<KeyCode>>,
+    focus: Option<Res<crate::navigator::ActiveInputFocus>>,
+    mut style: ResMut<toon_avatar::SceneStyle>,
+) {
+    if keys.just_pressed(KeyCode::F10)
+        && focus.is_none_or(|f| f.0 == crate::navigator::FocusedInput::None)
+    {
+        style.cartoon = !style.cartoon;
+        info!(
+            "scene style: {}",
+            if style.cartoon {
+                "cartoon"
+            } else {
+                "realistic"
+            }
+        );
+    }
+}
+
 /// The files being loaded; once all arrive the crate's resources are built.
 #[derive(Resource)]
 struct ToonDataFiles {
@@ -147,8 +169,13 @@ impl Plugin for ToonAvatarGamePlugin {
                 Update,
                 build_toon_data.run_if(resource_exists::<ToonDataFiles>),
             );
+        // The cartoon look of rooms and objects is off unless asked for: `GAME_SCENE_STYLE=cartoon`
+        // (F10 flips it in debug builds until the settings screen has the option).
+        app.insert_resource(toon_avatar::SceneStyle {
+            cartoon: std::env::var("GAME_SCENE_STYLE").is_ok_and(|v| v == "cartoon"),
+        });
         #[cfg(debug_assertions)]
-        app.add_systems(Update, debug_emote_shortcuts);
+        app.add_systems(Update, (debug_emote_shortcuts, debug_toggle_scene_style));
     }
 }
 

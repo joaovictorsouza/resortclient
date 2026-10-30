@@ -19,6 +19,7 @@ mod material;
 mod merge;
 mod props;
 mod quality;
+mod style;
 
 pub use animation::{
     AvatarAnimationConfig, AvatarAnimationLibrary, AvatarAnimationPlugin, AvatarAnimator,
@@ -46,6 +47,7 @@ pub use material::{
 pub use merge::{MergeEnabled, MergePlugin};
 pub use props::{AvatarHolding, AvatarPropsPlugin, HeldProp, HeldPropEntity, prop_transform};
 pub use quality::{Quality, QualityRenderSettingsPlugin};
+pub use style::{SceneStyle, SceneStylePlugin, SceneToon, SceneToonMaterial, toon_from_standard};
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
 
@@ -63,5 +65,6 @@ impl PluginGroup for ToonAvatarPlugins {
             .add(AvatarAnimationPlugin)
             .add(AvatarFacePlugin)
             .add(AvatarPropsPlugin)
+            .add(SceneStylePlugin)
     }
 }
