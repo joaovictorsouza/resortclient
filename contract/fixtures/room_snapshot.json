@@ -1,0 +1,21 @@
+{
+  "room_id": "r-42",
+  "room_name": "Minha sala",
+  "owner_id": "99a9a0e6-8152-4414-b657-3fbb1c77174e",
+  "layout": {
+    "id": "lobby_12x10",
+    "width": 12,
+    "height": 10,
+    "door": [1, 5],
+    "heightmap": ["000000000000", "000000000000"]
+  },
+  "avatars": [
+    {
+      "user_id": "99a9a0e6-8152-4414-b657-3fbb1c77174e",
+      "display_name": "Alice",
+      "x": 1,
+      "z": 5
+    }
+  ],
+  "items": []
+}

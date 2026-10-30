@@ -53,6 +53,16 @@ impl Quality {
         match self {
             Quality::Low => 512,
             Quality::Mid => 1024,
+            // The CDN ships the GPU-compressed copies only up to 1024 (the 2048 atlases are 22 MB each).
+            Quality::High
+                if cfg!(any(
+                    target_os = "ios",
+                    target_os = "android",
+                    feature = "basis_textures"
+                )) =>
+            {
+                1024
+            }
             Quality::High => 2048,
         }
     }
