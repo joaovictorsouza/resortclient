@@ -1,7 +1,7 @@
 # Plano 0001: personagens toon do jogo a partir do `anime-character-bevy`, empacotados como crate reutilizável
 
 Status: **rascunho para decisão** (29/10/2026). Substitui o plano anterior sobre o pacote Rukha93 (descartado). Este documento é só planejamento: nenhum código do jogo, do protótipo nem do pacote Rukha93 foi alterado.
-Licenças de pacotes de terceiros: ignoradas por ora; a licença limitada dos assets é o motivo de o repositório da crate ser **privado** e de ele ser a **última** etapa (fase 9).
+Licenças de pacotes de terceiros: ignoradas por ora; a licença limitada dos assets é o motivo de a crate ir, no futuro, para um repositório **privado** próprio. **Decisão de 30/10/2026**: por enquanto a crate vive **no mesmo repositório do jogo** (workspace do `resortclient`) e a separação fica para depois (fase 9, futura); os assets nunca entram nesse repositório.
 Contexto: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customization.md), [ADR 0010](../decisions/0010-creative-characters-pack-and-single-skeleton.md), [ADR 0011](../decisions/0011-assets-via-cdn.md), [investigação do skinning no Android](../process/investigacao-android-skinning.md).
 
 ## 1. Resumo
@@ -11,8 +11,8 @@ Contexto: [ADR 0007](../decisions/0007-modular-character-pipeline-and-customizat
 - **O que o protótipo não tem e o jogo precisa**: animações (nenhuma), expressões e piscada, pegar objetos (copo, lata), qualidade **por avatar** (hoje um tier global para a cena toda), cores **por avatar** (hoje por nome de material, o que vaza entre avatares), ligação com protocolo/servidor/CDN e uma API de crate.
 - **Visual cartoon opcional para salas e objetos**: opção de configuração que troca os materiais do cenário por uma variante toon (e volta), medida e testada em captura e em aparelho; os personagens são sempre toon (seção 9).
 - **LOD**: o esquema conversado antes (por aparelho + por tamanho do avatar na tela, animação mais lenta nos distantes) **continua válido** e é conciliado com o do protótipo na seção 6: as malhas, o gerador (`make_lods.py`) e as pastas de textura por tamanho do protótipo viram os níveis L0/L1/L2; o que falta é a decisão **por avatar**.
-- **Fases**: F0 consolidar e medir o protótipo → F1 extrair a crate → F2 LOD por avatar e tier de aparelho → F3 animações → F4 rosto (olhos, expressões, piscada) → F5 objetos na mão (beber) → F6 integrar ao jogo (protocolo, servidor, CDN, criador) → F7 visual cartoon de salas e objetos → F8 pipeline, console e CDN → F9 repositório privado no GitLab. Estimativas na seção 13.
-- **Decisões do dono** estão na seção 15. As que mais mudam o plano: a crate fica privada e o jogo, público, depende dela (15.1); corpos masculino e feminino; nível de personalização; avatares por sala; expressões e "segurando objeto" vão pelo servidor ou só locais.
+- **Fases**: F0 consolidar e medir o protótipo → F1 extrair a crate → F2 LOD por avatar e tier de aparelho → F3 animações → F4 rosto (olhos, expressões, piscada) → F5 objetos na mão (beber) → F6 integrar ao jogo (protocolo, servidor, CDN, criador) → F7 visual cartoon de salas e objetos → F8 pipeline, console e CDN → F9 (futura) separar a crate num repositório privado no GitLab. Estimativas na seção 13.
+- **Decisões do dono** estão na seção 15. As que mais mudam o plano: a crate começa no repositório do jogo e é separada depois (15.1, decidido); corpos masculino e feminino; nível de personalização; avatares por sala; expressões e "segurando objeto" vão pelo servidor ou só locais.
 
 ## 2. O que o protótipo já tem (lido em 29/10/2026; **não executei** o protótipo)
 
@@ -47,21 +47,23 @@ Cliente `resortclient` (Bevy 0.20, branch `main`): `avatar.rs` e `avatar_anim.rs
 
 ## 5. Arquitetura da crate
 
-### 5.1 Repositório e nomes (proposta)
+### 5.1 Onde a crate mora (decidido em 30/10/2026: dentro do repositório do jogo)
 
-Repositório novo **privado** no GitLab, `resort-characters` (nome provisório; decisão 15.2), um workspace Cargo:
+A crate nasce como membro do workspace do `resortclient`, ao lado de `crates/game`, `crates/protocol` e `crates/nakama_client` (ADR 0003):
 
 ```
-resort-characters/
+resortclient/
   crates/toon_avatar/        # a crate reutilizável (nome provisório; features abaixo)
   crates/toon_avatar_demo/   # demonstrador: tela de montagem do ui.rs + cenas de teste (binário/cdylib)
-  tools/                     # pipeline (Blender/Python/texconv); sem assets
-  docs/                      # ADR, guia de importação, contrato de assets
+  crates/game/               # passa a depender de toon_avatar (path)
 ```
 
-- Dependência do jogo: `toon_avatar = { git = "https://gitlab.com/.../resort-characters", tag = "v0.x.y" }`, no mesmo padrão que o cliente já usa para `bevy-kmp-ffi`. **Atenção**: o cliente é (ou será) público (ADR 0011/0012); uma dependência git privada impede terceiros de compilá-lo e exige credencial na CI. Opções na decisão 15.1.
+- **Sem assets no repositório**: nem o pacote Rukha93, nem GLB, nem textura. Os assets e o pipeline (FBX→GLB, LODs, texturas, atlas, retarget) ficam no repositório privado `resort-game-assets`, como já manda a ADR 0011; o demonstrador lê os assets da CDN (DEV) ou de uma pasta local ignorada pelo git (`TOON_AVATAR_ASSETS=...`).
+- **Fronteira para separar depois**: a crate **não pode** depender de `game`, `protocol`, `nakama_client`, `bevy_hui` nem do host KMP; tem `Cargo.toml` próprio, `publish = false`, versão semântica própria, `README` e `CHANGELOG` desde o início, e o jogo a usa por `path`. Um teste de CI (`cargo tree -p toon_avatar` sem nenhuma crate do jogo) protege essa regra; com ela, separar na fase 9 vira mover a pasta com `git subtree split` e trocar a dependência por `git = ..., tag = ...` (o mesmo padrão de `bevy-kmp-ffi`).
+- **Nomes** (`toon_avatar`, `toon_avatar_demo`) são provisórios (decisão 15.2).
 - Versão do Bevy **fixada** à do jogo (0.20); a crate declara `bevy` sem features de plataforma (as features `basis-universal` e `android-native-activity` ficam no app).
 - Features: `demo-ui` (bevy_ui do demonstrador, desligada por padrão), `basis` (texturas `.basis`), `debug-capture` (captura offscreen para testes visuais).
+- Repositório do jogo é público (ADR 0011/0012): o **código** do porte dos shaders e da crate ficará visível enquanto a crate morar aqui; a restrição de licença dos assets não é violada porque nenhum asset entra, mas o porte dos shaders do pacote é um ponto de licença a rever antes de tornar o repositório público (licenças estão ignoradas por ora, a pedido).
 
 ### 5.2 API pública (sem nada do Resort Game)
 
@@ -207,16 +209,17 @@ Tamanhos relativos: P ≈ 1–2 dias, M ≈ 3–5, G ≈ 1–2 semanas, GG ≈ 2
 | **F6 Integrar ao jogo** | substituir `avatar.rs`/`avatar_anim.rs`/`character_creator.rs` pela crate; protocolo v2, servidor e catálogo v3; `CdnReader`; criador com `bevy_hui`; (se 15.5(b)) mensagem de ação | login → criador → sala com 2 jogadores no iOS e no Android, vendo o mesmo visual, expressões e objetos; aparência antiga abre sem erro; `go test -race`, `check-contract.sh`, `cargo test` verdes | GG |
 | **F7 Visual cartoon de salas e objetos** | `ToonStylePlugin`, opção nas configurações, testes da seção 9 | opção liga/desliga sem reiniciar; capturas das 3 salas nos dois estilos; A/B de desempenho nos dois aparelhos; com a opção desligada, nada muda | G |
 | **F8 Pipeline, CDN e console** | `tools/` migrados, texturas e LODs por tier, manifest com `lod`/`min_tier`, `verify-cdn`, console adaptado | um comando gera os assets do pacote; peça dentro do orçamento; publicável no DEV em dry-run; console importa e edita materiais | G |
-| **F9 Repositório privado no GitLab** | repo `resort-characters` privado, histórico limpo, CI, versionamento (`v0.x`), docs, README e ADR 0015 no jogo | jogo compila contra a tag da crate (CI com credencial), sem assets no histórico, protótipo antigo arquivado | M |
+| **F9 (futura) Separar a crate** | `git subtree split` para um repositório privado no GitLab, CI, tags (`v0.x`), docs | jogo compila contra a tag da crate (CI com credencial), histórico sem assets, protótipo antigo arquivado; **fora do escopo imediato** | M |
 
-Dependências: F0 antes de tudo; F1 depois de F0; F2, F3 e F4 sobre a F1 (F3 antes de F5; F4 pode correr junto de F2/F3); F6 depois de F1–F5 (pode começar com F1–F3 e acrescentar o resto); F7 só precisa da F1 (rampa e material) e pode correr em paralelo; F8 acompanha F2/F6; **F9 por último**, como pedido. Caminho crítico: F0 → F1 → F3 → F5 → F6. Primeiro marco visível: avatar do pacote andando numa sala do jogo (fim da F3 + parte da F6).
+Dependências: F0 antes de tudo; F1 depois de F0; F2, F3 e F4 sobre a F1 (F3 antes de F5; F4 pode correr junto de F2/F3); F6 depois de F1–F5 (pode começar com F1–F3 e acrescentar o resto); F7 só precisa da F1 (rampa e material) e pode correr em paralelo; F8 acompanha F2/F6; **F9 por último e só quando você decidir separar**. Caminho crítico: F0 → F1 → F3 → F5 → F6. Primeiro marco visível: avatar do pacote andando numa sala do jogo (fim da F3 + parte da F6).
 
 ## 14. Riscos
 
 | Risco | Prob. | Impacto | Mitigação |
 |---|---|---|---|
 | Desempenho no S22 (CPU, 71 juntas, morph, atlas) | alta | alto | medir na F0; mescla/atlas já existentes; L2 com menos juntas; cortar torção |
-| Crate privada e jogo público não compilam para terceiros | certa se mantida | médio | decisão 15.1; vendor ou crate pública sem assets; CI com credencial |
+| Na separação futura, jogo público dependerá de crate privada e terceiros não compilam | certa se mantida | médio | decidir na F9: crate pública só com código, ou CI com credencial |
+| A crate acopla ao jogo e a separação futura fica cara | média | médio | regra de fronteira e teste de CI da seção 5.1 |
 | `pause + seek_to` não funciona bem no Bevy 0.20 | média | médio | plano B de interpolar pose ou clip de baixa frequência |
 | Cores vazando entre avatares (como no protótipo) | certa se não tratada | alto | material por avatar desde a F1, teste automatizado |
 | 4 influências estragam cabelo longo e roupas largas | média | médio | revisão peça a peça, reponderar, excluir as ruins |
@@ -232,7 +235,7 @@ Dependências: F0 antes de tudo; F1 depois de F0; F2, F3 e F4 sobre a F1 (F3 ant
 
 Cada uma com a minha recomendação; nenhuma foi assumida nos números acima, exceto onde dito.
 
-1. **Crate privada vs. cliente público**: o cliente do jogo é público (ADR 0011/0012), mas a crate ficará privada. Opções: (a) cliente passa a ser privado; (b) dependência git privada com credencial na CI e instruções para quem tiver acesso; (c) crate **pública** só com código e assets (e demonstrador sem assets) em repositório privado separado. *Recomendo (c)* se a restrição de licença for só dos assets, ou (b) se você quiser mesmo o código privado; confirmo com você antes da F9.
+1. ~~Crate privada vs. cliente público~~ **Decidido em 30/10/2026**: a crate começa no repositório do jogo e a separação fica para depois (F9). Fica aberto, para a F9, se o repositório separado será privado com credencial na CI ou público só com código.
 2. **Nome da crate e do repositório** (`resort-characters`/`toon_avatar` são provisórios).
 3. **Corpos masculino e feminino** de volta (o pacote é separado por F/M; a ADR 0010 tinha removido o gênero). *Recomendo voltar.*
 4. **Quantos avatares por sala** o jogo precisa suportar e qual o teto de avatares visíveis no tier Low.
