@@ -198,7 +198,7 @@ mod tests {
         write_cache(&path, &sample()).unwrap();
         let back = read_cache(&path).expect("cache should be readable");
         assert_eq!(back.catalog_version, sample().catalog_version);
-        assert_eq!(cosmetics_of(&back).unwrap().items[0].id, "hat_010");
+        assert_eq!(cosmetics_of(&back).unwrap().items[0].id, "F_head.001");
     }
 
     #[test]

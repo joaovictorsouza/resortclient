@@ -2,10 +2,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use nakama_client::{NakamaClientHandle, NakamaCommand, NakamaEvent};
 use protocol::{
-    AvatarAppearanceUpdated, AvatarJoined, AvatarLeft, AvatarPath, AvatarPostureChanged,
-    BuildModeRejected, ClientMessage, GetShopCatalogResponse as ShopCatalogResponse,
-    InventoryItemDto, ItemMoved, ItemPlaced, ItemRemoved, ItemRotated, MoveRejected, MoveRequest,
-    PurchaseItemResponse, RoomSnapshot, ServerMessage, WalletDto,
+    AvatarAction, AvatarAppearanceUpdated, AvatarExpressionChanged, AvatarHoldingChanged,
+    AvatarJoined, AvatarLeft, AvatarPath, AvatarPostureChanged, BuildModeRejected, ClientMessage,
+    GetShopCatalogResponse as ShopCatalogResponse, InventoryItemDto, ItemMoved, ItemPlaced,
+    ItemRemoved, ItemRotated, MoveRejected, MoveRequest, PurchaseItemResponse, RoomSnapshot,
+    ServerMessage, WalletDto,
 };
 
 use crate::config::GameConfig;
@@ -58,6 +59,26 @@ pub struct NetAvatarAppearanceUpdatedEvent(pub AvatarAppearanceUpdated);
 
 #[derive(Message, Debug, Clone)]
 pub struct NetAvatarPostureChangedEvent(pub AvatarPostureChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarExpressionChangedEvent(pub AvatarExpressionChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarHoldingChangedEvent(pub AvatarHoldingChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarActionEvent(pub AvatarAction);
+
+/// The writers of the avatar messages other than movement: appearance, posture, expression, held
+/// prop and avatar action (bundled to stay under Bevy's parameter limit).
+#[derive(SystemParam)]
+pub struct EmoteMessageWriters<'w> {
+    appearance: MessageWriter<'w, NetAvatarAppearanceUpdatedEvent>,
+    posture: MessageWriter<'w, NetAvatarPostureChangedEvent>,
+    expression: MessageWriter<'w, NetAvatarExpressionChangedEvent>,
+    holding: MessageWriter<'w, NetAvatarHoldingChangedEvent>,
+    action: MessageWriter<'w, NetAvatarActionEvent>,
+}
 
 /// New balances. `delta_*` are zero unless the server reported the change (heartbeat rewards,
 /// pushed grants), which lets the HUD play the gold sound only for incoming gold.
@@ -117,6 +138,9 @@ impl Plugin for NetPlugin {
             .add_message::<NetInventoryLoadedEvent>()
             .add_message::<NetAvatarAppearanceUpdatedEvent>()
             .add_message::<NetAvatarPostureChangedEvent>()
+            .add_message::<NetAvatarExpressionChangedEvent>()
+            .add_message::<NetAvatarHoldingChangedEvent>()
+            .add_message::<NetAvatarActionEvent>()
             .add_message::<NetWalletUpdatedEvent>()
             .add_message::<NetShopCatalogLoadedEvent>()
             .add_message::<NetPurchaseSucceededEvent>()
@@ -208,8 +232,7 @@ fn poll_nakama_events(
     mut doorbell_state: ResMut<DoorbellState>,
     mut active_meta: ResMut<ActiveRoomMetadata>,
     mut furni_writers: FurnitureMessageWriters,
-    mut appearance_events: MessageWriter<NetAvatarAppearanceUpdatedEvent>,
-    mut posture_events: MessageWriter<NetAvatarPostureChangedEvent>,
+    mut emotes: EmoteMessageWriters,
     mut economy: EconomyMessageWriters,
     mut connection: ResMut<ConnectionStatus>,
 ) {
@@ -334,10 +357,23 @@ fn poll_nakama_events(
                     furni_writers.rejected.write(NetBuildModeRejectedEvent(rej));
                 }
                 ServerMessage::AvatarAppearanceUpdated(upd) => {
-                    appearance_events.write(NetAvatarAppearanceUpdatedEvent(upd));
+                    emotes
+                        .appearance
+                        .write(NetAvatarAppearanceUpdatedEvent(upd));
                 }
                 ServerMessage::AvatarPostureChanged(change) => {
-                    posture_events.write(NetAvatarPostureChangedEvent(change));
+                    emotes.posture.write(NetAvatarPostureChangedEvent(change));
+                }
+                ServerMessage::AvatarExpressionChanged(change) => {
+                    emotes
+                        .expression
+                        .write(NetAvatarExpressionChangedEvent(change));
+                }
+                ServerMessage::AvatarHoldingChanged(change) => {
+                    emotes.holding.write(NetAvatarHoldingChangedEvent(change));
+                }
+                ServerMessage::AvatarAction(action) => {
+                    emotes.action.write(NetAvatarActionEvent(action));
                 }
             },
 

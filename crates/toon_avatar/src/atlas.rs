@@ -216,6 +216,7 @@ fn atlas_params(
             flags,
             outline_on && quality.outline(),
             look,
+            None,
         ));
     }
     while items.len() < ITEMS {

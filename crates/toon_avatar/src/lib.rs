@@ -28,7 +28,7 @@ pub use animation::{
 pub use atlas::{AtlasBuilt, AtlasMaterial};
 pub use avatar::{Applied, Attachment, Avatar, Body, BodyPart, BodyReady, Equipped, OwnedBy};
 pub use catalog::{
-    AvatarCatalog, AvatarLook, BodyCatalog, BodyType, CatalogEntry, ColorChoice, Slot,
+    AvatarCatalog, AvatarLook, BodyCatalog, BodyType, CatalogEntry, ColorChoice, ColorGroup, Slot,
 };
 pub use face::{
     AvatarFace, AvatarFacePlugin, BLINK_DURATION, Expression, FaceAnimator, blink_amount,

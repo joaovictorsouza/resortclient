@@ -148,6 +148,8 @@ pub struct BodyPart(pub u32);
 #[derive(Component)]
 pub struct Attachment {
     pub body: Entity,
+    /// Hair, hat or glasses.
+    pub slot: Slot,
 }
 
 /// Marks the roots (and moved meshes) that belong to a body, so any descendant can find its
@@ -512,10 +514,18 @@ fn sync_attachments(
         let glasses_entry = glasses
             .as_deref()
             .and_then(|n| body_catalog.find(Slot::Glasses, n));
-        for entry in [hair_entry, glasses_entry].into_iter().flatten() {
+        let hair_slot = if hat_name.is_some() {
+            Slot::Hat
+        } else {
+            Slot::Hair
+        };
+        for (slot, entry) in [(hair_slot, hair_entry), (Slot::Glasses, glasses_entry)] {
+            let Some(entry) = entry else {
+                continue;
+            };
             for glb in &entry.glbs {
                 commands.spawn((
-                    Attachment { body },
+                    Attachment { body, slot },
                     OwnedBy(body),
                     WorldAssetRoot(
                         assets.load(GltfAssetLabel::Scene(0).from_asset(level.model_path(glb))),

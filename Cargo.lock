@@ -3330,6 +3330,7 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
+ "toon_avatar",
  "uniffi",
  "uuid",
  "wgpu",

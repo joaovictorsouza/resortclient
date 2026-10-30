@@ -19,8 +19,8 @@ use bevy::{
 use serde::Deserialize;
 
 use crate::{
-    avatar::{Avatar, Body, OwnedBy, owner_of},
-    catalog::AvatarLook,
+    avatar::{Attachment, Avatar, Body, Equipped, OwnedBy, owner_of},
+    catalog::{AvatarLook, Slot},
     quality::Quality,
 };
 
@@ -157,7 +157,8 @@ impl Default for ToonSettings {
 /// The toon materials of one body (one avatar at one level of detail), by glTF material name.
 #[derive(Component, Default)]
 pub struct AvatarMaterials {
-    map: HashMap<String, Handle<ToonMaterial>>,
+    /// glTF material name -> (material, slot of the item it belongs to).
+    map: HashMap<String, (Handle<ToonMaterial>, Option<Slot>)>,
 }
 
 impl AvatarMaterials {
@@ -167,7 +168,7 @@ impl AvatarMaterials {
         assets: &AssetServer,
         materials: &Assets<ToonMaterial>,
     ) -> bool {
-        self.map.values().all(|handle| {
+        self.map.values().all(|(handle, _)| {
             materials.get(handle).is_none_or(|m| {
                 [&m.mask, &m.normal, &m.ramp]
                     .into_iter()
@@ -246,6 +247,7 @@ pub(crate) fn toon_params(
     flags: u32,
     outline_on: bool,
     look: &AvatarLook,
+    item_slot: Option<Slot>,
 ) -> ToonParams {
     let mut params = ToonParams {
         a1: v4(def.a1),
@@ -270,7 +272,7 @@ pub(crate) fn toon_params(
         },
     };
     for slot in 0..COLOR_SLOTS {
-        if let Some(c) = look.color(name, slot) {
+        if let Some(c) = look.color_of(name, item_slot, slot) {
             set_slot(&mut params, slot, c);
         }
     }
@@ -290,6 +292,8 @@ fn assign_toon_materials(
     owners: Query<&OwnedBy>,
     mut bodies: Query<(&Body, &mut AvatarMaterials)>,
     avatars: Query<&Avatar>,
+    equipped: Query<&Equipped>,
+    attachments: Query<&Attachment>,
     defs: Res<MaterialDefs>,
     assets: Res<AssetServer>,
     mut toon_materials: ResMut<Assets<ToonMaterial>>,
@@ -317,6 +321,7 @@ fn assign_toon_materials(
                 .try_insert(crate::atlas::AtlasSource);
             continue;
         }
+        let item_slot = item_slot_of(entity, &parents, &equipped, &attachments);
         let handle = materials
             .map
             .entry(name.0.clone())
@@ -332,13 +337,14 @@ fn assign_toon_materials(
                 if normal.is_some() {
                     flags |= FLAG_HAS_NORMAL;
                 }
-                toon_materials.add(ToonMaterial {
+                let handle = toon_materials.add(ToonMaterial {
                     params: toon_params(
                         def,
                         &name.0,
                         flags,
                         settings.outline && quality.outline(),
                         &avatar.look,
+                        item_slot,
                     ),
                     // Mask and normal maps hold data, not colour: sample them linearly.
                     mask: def
@@ -347,8 +353,10 @@ fn assign_toon_materials(
                         .map(|p| load_texture(&assets, &texture_path(p, quality), def.mask_srgb)),
                     normal: normal.map(|p| load_texture(&assets, &texture_path(p, quality), false)),
                     ramp: Some(load_texture(&assets, RAMP, true)),
-                })
+                });
+                (handle, item_slot)
             })
+            .0
             .clone();
         commands
             .entity(entity)
@@ -372,14 +380,14 @@ fn apply_look_colors(
         if !avatar.is_changed() {
             continue;
         }
-        for (name, handle) in &materials.map {
+        for (name, (handle, item_slot)) in &materials.map {
             let Some(mut mat) = toon_materials.get_mut(handle) else {
                 continue;
             };
             for slot in 0..COLOR_SLOTS {
                 let color = avatar
                     .look
-                    .color(name, slot)
+                    .color_of(name, *item_slot, slot)
                     .or_else(|| defs.color(name, slot));
                 if let Some(c) = color {
                     set_slot(&mut mat.params, slot, c);
@@ -400,7 +408,7 @@ fn apply_settings(
         return;
     }
     for (body, materials) in &bodies {
-        for (name, handle) in &materials.map {
+        for (name, (handle, _)) in &materials.map {
             if let (Some(def), Some(mut mat)) = (defs.get(name), toon_materials.get_mut(handle)) {
                 mat.params.outline_thickness = if settings.outline && body.lod.outline() {
                     def.outline_thickness
@@ -409,5 +417,23 @@ fn apply_settings(
                 };
             }
         }
+    }
+}
+
+/// The slot of the item a mesh belongs to: a garment (`Equipped`) or a head attachment.
+fn item_slot_of(
+    mut entity: Entity,
+    parents: &Query<&ChildOf>,
+    equipped: &Query<&Equipped>,
+    attachments: &Query<&Attachment>,
+) -> Option<Slot> {
+    loop {
+        if let Ok(e) = equipped.get(entity) {
+            return Some(e.slot);
+        }
+        if let Ok(a) = attachments.get(entity) {
+            return Some(a.slot);
+        }
+        entity = parents.get(entity).ok()?.parent();
     }
 }

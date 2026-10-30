@@ -163,6 +163,16 @@ impl AvatarCatalog {
         }
     }
 
+    /// Parses a catalog written as one file: `{"F": {...}, "M": {...}}`, each body with its
+    /// garments and head attachments (`BodyCatalog`).
+    pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
+        let bodies: BodiesFile = serde_json::from_str(json)?;
+        Ok(AvatarCatalog {
+            female: bodies.female,
+            male: bodies.male,
+        })
+    }
+
     /// Builds the catalog from the files the asset pipeline writes: per-body garments
     /// (`outfits.json`), head attachments shared by both bodies (`attachments.json`) and
     /// optional extra garments (`custom_items.json`, same shape as `outfits.json`, entries are
@@ -202,6 +212,91 @@ impl AvatarCatalog {
     }
 }
 
+/// A part of the avatar whose colours the player sets as a group. Each group covers the materials
+/// of that part (see [`ColorGroup::of_material`]), and its colours are the six colour slots
+/// A1, A2, B1, B2, C1, C2 of those materials.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorGroup {
+    /// The body and the face (slots A1 = shade, A2 = main tone).
+    Skin,
+    Eyes,
+    /// The clothes drawn on the body itself (slots B1, B2 of the body material).
+    Underwear,
+    Hair,
+    Hat,
+    Glasses,
+    Top,
+    Bottom,
+    Outfit,
+    Shoes,
+}
+
+impl ColorGroup {
+    pub const ALL: [ColorGroup; 10] = [
+        ColorGroup::Skin,
+        ColorGroup::Eyes,
+        ColorGroup::Underwear,
+        ColorGroup::Hair,
+        ColorGroup::Hat,
+        ColorGroup::Glasses,
+        ColorGroup::Top,
+        ColorGroup::Bottom,
+        ColorGroup::Outfit,
+        ColorGroup::Shoes,
+    ];
+
+    /// Name used by the network protocol and the files.
+    pub fn name(self) -> &'static str {
+        match self {
+            ColorGroup::Skin => "skin",
+            ColorGroup::Eyes => "eyes",
+            ColorGroup::Underwear => "underwear",
+            ColorGroup::Hair => "hair",
+            ColorGroup::Hat => "hat",
+            ColorGroup::Glasses => "glasses",
+            ColorGroup::Top => "top",
+            ColorGroup::Bottom => "bottom",
+            ColorGroup::Outfit => "outfit",
+            ColorGroup::Shoes => "shoes",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|g| g.name() == name)
+    }
+
+    /// The group that colours colour slot `slot` (0 = A1 ... 5 = C2) of a material, given the slot
+    /// of the item it belongs to (`None` for the body and face scenes). The body material uses
+    /// A1/A2 for the skin and B1/B2 for the underwear; the face skin A1/A2; the eye material all of
+    /// its slots for the eyes; any other material takes the group of its item's slot.
+    pub fn of_material(material: &str, item_slot: Option<Slot>, slot: usize) -> Option<Self> {
+        if material.starts_with("mat_body") {
+            return match slot {
+                0 | 1 => Some(ColorGroup::Skin),
+                2 | 3 => Some(ColorGroup::Underwear),
+                _ => None,
+            };
+        }
+        if material.starts_with("mat_face") {
+            return (slot < 2).then_some(ColorGroup::Skin);
+        }
+        if material == "mat_eye" {
+            return Some(ColorGroup::Eyes);
+        }
+        match item_slot? {
+            Slot::Hair => Some(ColorGroup::Hair),
+            Slot::Hat => Some(ColorGroup::Hat),
+            Slot::Glasses => Some(ColorGroup::Glasses),
+            Slot::Top => Some(ColorGroup::Top),
+            Slot::Bottom => Some(ColorGroup::Bottom),
+            Slot::Outfit => Some(ColorGroup::Outfit),
+            Slot::Shoes => Some(ColorGroup::Shoes),
+            Slot::Face => None,
+        }
+    }
+}
+
 /// One colour chosen for one slot (A1, A2, B1, B2, C1, C2) of one glTF material.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ColorChoice {
@@ -225,6 +320,8 @@ pub struct AvatarLook {
     pub hat: Option<String>,
     pub glasses: Option<String>,
     pub colors: Vec<ColorChoice>,
+    /// Colours set by group: up to six values per group (A1..C2); `None` keeps the material's own.
+    pub group_colors: std::collections::BTreeMap<ColorGroup, Vec<Option<[f32; 3]>>>,
 }
 
 impl AvatarLook {
@@ -265,6 +362,24 @@ impl AvatarLook {
         }
     }
 
+    /// The colour of colour slot `slot` of `material`: the per-material choice if there is one,
+    /// else the choice of the group the slot belongs to.
+    pub fn color_of(
+        &self,
+        material: &str,
+        item_slot: Option<Slot>,
+        slot: usize,
+    ) -> Option<[f32; 3]> {
+        self.color(material, slot).or_else(|| {
+            let group = ColorGroup::of_material(material, item_slot, slot)?;
+            self.group_colors
+                .get(&group)?
+                .get(slot_in_group(group, slot))?
+                .as_ref()
+                .copied()
+        })
+    }
+
     pub fn color(&self, material: &str, slot: usize) -> Option<[f32; 3]> {
         self.colors
             .iter()
@@ -289,6 +404,15 @@ impl AvatarLook {
 
     pub fn clear_colors(&mut self, material: &str) {
         self.colors.retain(|c| c.material != material);
+    }
+}
+
+/// Position of a material colour slot in its group's list: the underwear group is B1, B2 of the
+/// body, so slots 2 and 3 are its entries 0 and 1; every other group is indexed by slot.
+fn slot_in_group(group: ColorGroup, slot: usize) -> usize {
+    match group {
+        ColorGroup::Underwear => slot - 2,
+        _ => slot,
     }
 }
 
@@ -340,6 +464,56 @@ mod tests {
         look.clear_colors("mat_a");
         assert_eq!(look.color("mat_a", 0), None);
         assert_eq!(look.color("mat_b", 0), Some([0.0, 0.0, 1.0]));
+    }
+
+    #[test]
+    fn group_colors_reach_the_slots_of_their_materials() {
+        let mut look = AvatarLook::default();
+        look.group_colors.insert(
+            ColorGroup::Skin,
+            vec![Some([0.1, 0.0, 0.0]), Some([0.9, 0.8, 0.7])],
+        );
+        look.group_colors
+            .insert(ColorGroup::Underwear, vec![None, Some([0.0, 0.0, 1.0])]);
+        look.group_colors.insert(
+            ColorGroup::Top,
+            vec![Some([1.0, 0.0, 0.0]), None, Some([0.0, 1.0, 0.0])],
+        );
+        // Skin: the body and the face take A1 and A2.
+        assert_eq!(look.color_of("mat_body_F", None, 1), Some([0.9, 0.8, 0.7]));
+        assert_eq!(look.color_of("mat_face_M", None, 0), Some([0.1, 0.0, 0.0]));
+        // The underwear is the body's B2.
+        assert_eq!(look.color_of("mat_body_F", None, 3), Some([0.0, 0.0, 1.0]));
+        assert_eq!(look.color_of("mat_body_F", None, 2), None);
+        // An item's materials take its slot's group, slot by slot.
+        assert_eq!(
+            look.color_of("mat_top.001_shirt", Some(Slot::Top), 0),
+            Some([1.0, 0.0, 0.0])
+        );
+        assert_eq!(look.color_of("mat_top.001_shirt", Some(Slot::Top), 1), None);
+        assert_eq!(
+            look.color_of("mat_top.001_shirt", Some(Slot::Top), 2),
+            Some([0.0, 1.0, 0.0])
+        );
+        // A bottom is not painted by the top's colours.
+        assert_eq!(
+            look.color_of("mat_bot.001_pants", Some(Slot::Bottom), 0),
+            None
+        );
+        // A per-material choice wins over the group.
+        look.set_color("mat_top.001_shirt", 0, [0.5, 0.5, 0.5]);
+        assert_eq!(
+            look.color_of("mat_top.001_shirt", Some(Slot::Top), 0),
+            Some([0.5, 0.5, 0.5])
+        );
+    }
+
+    #[test]
+    fn color_groups_round_trip_through_their_names() {
+        for g in ColorGroup::ALL {
+            assert_eq!(ColorGroup::from_name(g.name()), Some(g));
+        }
+        assert_eq!(ColorGroup::from_name("tail"), None);
     }
 
     #[test]
