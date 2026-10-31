@@ -15,7 +15,7 @@ use toon_avatar::{
     HeldProp, MaterialDefs, parse_clips, parse_grip,
 };
 
-use crate::appearance::parse_hex_rgb;
+use crate::appearance::{parse_hex_rgb, shade_of};
 use crate::cdn_assets::JsonText;
 
 pub const AVATAR_CATALOG_FILE: &str = "characters/avatar_catalog.json";
@@ -35,6 +35,7 @@ pub fn look_from_appearance(appearance: &AvatarAppearance) -> AvatarLook {
         };
         group_colors.insert(group, values.iter().map(|hex| parse_hex_rgb(hex)).collect());
     }
+    fill_skin(appearance, &mut group_colors);
     AvatarLook {
         body: if appearance.body_type == protocol::BODY_MALE {
             BodyType::Male
@@ -52,6 +53,33 @@ pub fn look_from_appearance(appearance: &AvatarAppearance) -> AvatarLook {
         colors: Vec::new(),
         group_colors,
     }
+}
+
+/// Skin tone used when the appearance carries none (a profile saved before the colour groups existed).
+const DEFAULT_SKIN: &str = "#E0AC8C";
+
+/// Makes sure both skin slots are set: a missing slot would draw with the material's own colour (red
+/// hands and feet) instead of a skin tone. A missing shade (A1) is derived from the main tone (A2).
+fn fill_skin(
+    appearance: &AvatarAppearance,
+    colors: &mut BTreeMap<ColorGroup, Vec<Option<[f32; 3]>>>,
+) {
+    let main = appearance
+        .colors
+        .get("skin")
+        .and_then(|v| v.get(1))
+        .filter(|hex| parse_hex_rgb(hex).is_some())
+        .map_or(DEFAULT_SKIN, String::as_str);
+    let shade = appearance
+        .colors
+        .get("skin")
+        .and_then(|v| v.first())
+        .filter(|hex| parse_hex_rgb(hex).is_some())
+        .map_or_else(|| shade_of(main), Clone::clone);
+    colors.insert(
+        ColorGroup::Skin,
+        vec![parse_hex_rgb(&shade), parse_hex_rgb(main)],
+    );
 }
 
 /// The prop a catalog id stands for: its model lives in the CDN under `characters/props/`.
@@ -254,6 +282,15 @@ mod tests {
     }
 
     #[test]
+    fn an_appearance_without_skin_colours_gets_a_default_skin_with_a_derived_shade() {
+        let look = look_from_appearance(&AvatarAppearance::default());
+        let skin = &look.group_colors[&ColorGroup::Skin];
+        assert_eq!(skin.len(), 2);
+        assert!(skin[0].is_some() && skin[1].is_some());
+        assert_ne!(skin[0], skin[1]);
+    }
+
+    #[test]
     fn colors_become_group_colors_with_empty_and_bad_values_left_to_the_material() {
         let mut appearance = AvatarAppearance {
             body_type: "male".into(),
@@ -277,7 +314,11 @@ mod tests {
             look.group_colors[&ColorGroup::Top],
             vec![Some([1.0, 0.0, 0.0]), None, None, Some([0.0, 0.0, 1.0])]
         );
-        assert_eq!(look.group_colors.len(), 1, "an unknown group is ignored");
+        assert_eq!(
+            look.group_colors.len(),
+            2,
+            "an unknown group is ignored; the skin is always filled"
+        );
     }
 
     #[test]
