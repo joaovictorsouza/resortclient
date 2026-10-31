@@ -69,8 +69,14 @@ fn load_animations(dir: &Path) -> Option<AvatarAnimationConfig> {
 }
 
 /// The avatar the demo starts with.
+/// `TOON_DEMO_BODY=M` starts with the male body and `TOON_DEMO_HAIR=<name>` with that hair (debug captures).
 fn starting_look(catalog: &AvatarCatalog) -> AvatarLook {
-    let body = BodyType::Female;
+    let body = if std::env::var("TOON_DEMO_BODY").is_ok_and(|v| v == "M") {
+        BodyType::Male
+    } else {
+        BodyType::Female
+    };
+    let hair_name = std::env::var("TOON_DEMO_HAIR").unwrap_or_else(|_| "Hairstyle.06".into());
     let c = catalog.of(body);
     let first = |slot: Slot| c.slot(slot).first().map(|e| e.name.clone());
     AvatarLook {
@@ -81,7 +87,7 @@ fn starting_look(catalog: &AvatarCatalog) -> AvatarLook {
         hair: c
             .hair
             .iter()
-            .find(|e| e.name == "Hairstyle.06")
+            .find(|e| e.name == hair_name)
             .map(|e| e.name.clone())
             .or_else(|| first(Slot::Hair)),
         ..default()

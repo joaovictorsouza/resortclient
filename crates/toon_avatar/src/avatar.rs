@@ -93,6 +93,9 @@ pub struct Applied {
     items: HashMap<Slot, Option<String>>,
     /// Body, hair-or-hat name and glasses name of the attachments in place on `current`.
     attachments: Option<(Entity, Option<String>, Option<String>)>,
+    /// Generation of the newest request per slot: what is older is retired once the new one is in.
+    slot_gen: HashMap<Slot, u32>,
+    next_gen: u32,
 }
 
 impl Applied {
@@ -129,6 +132,7 @@ struct Settling(u8);
 struct PendingGarment {
     body: Entity,
     slot: Slot,
+    generation: u32,
     hides: Vec<u32>,
 }
 
@@ -137,6 +141,7 @@ struct PendingGarment {
 pub struct Equipped {
     pub body: Entity,
     pub slot: Slot,
+    pub(crate) generation: u32,
     pub hides: Vec<u32>,
 }
 
@@ -150,7 +155,12 @@ pub struct Attachment {
     pub body: Entity,
     /// Hair, hat or glasses.
     pub slot: Slot,
+    generation: u32,
 }
+
+/// Marks a head attachment whose scene has finished spawning.
+#[derive(Component)]
+struct AttachmentReady;
 
 /// Marks the roots (and moved meshes) that belong to a body, so any descendant can find its
 /// body by walking up the hierarchy.
@@ -184,6 +194,7 @@ impl Plugin for AvatarPlugin {
                     tag_body_parts,
                     hide_covered_parts,
                     sync_attachments,
+                    retire_replaced,
                 )
                     .chain(),
             )
@@ -225,6 +236,7 @@ fn spawn_garment(
     body: Entity,
     lod: Quality,
     slot: Slot,
+    generation: u32,
     entry: &CatalogEntry,
 ) {
     for glb in &entry.glbs {
@@ -232,6 +244,7 @@ fn spawn_garment(
             PendingGarment {
                 body,
                 slot,
+                generation,
                 hides: entry.hides.clone(),
             },
             OwnedBy(body),
@@ -250,7 +263,6 @@ fn sync_avatars(
     assets: Res<AssetServer>,
     catalog: Res<AvatarCatalog>,
     mut avatars: Query<(Entity, Ref<Avatar>, Ref<AvatarLod>, &mut Applied)>,
-    equipped: Query<(Entity, &Equipped)>,
     pending: Query<(Entity, &PendingGarment)>,
 ) {
     for (avatar_entity, avatar, lod, mut applied) in &mut avatars {
@@ -292,6 +304,7 @@ fn sync_avatars(
             applied.current = Some((body, wanted.0, wanted.1));
             applied.items.clear();
             applied.attachments = None;
+            applied.slot_gen.clear();
         }
         let Some((body, _, level)) = applied.current else {
             continue;
@@ -310,18 +323,18 @@ fn sync_avatars(
             if applied.items.get(&slot) == Some(&want) {
                 continue;
             }
-            for (entity, eq) in &equipped {
-                if eq.body == body && eq.slot == slot {
-                    commands.entity(entity).try_despawn();
-                }
-            }
+            // The garment being replaced stays on until the new one is in (`retire_replaced`), so
+            // changing clothes never leaves a hole in the body.
             for (entity, p) in &pending {
                 if p.body == body && p.slot == slot {
                     commands.entity(entity).try_despawn();
                 }
             }
+            applied.next_gen += 1;
+            let generation = applied.next_gen;
+            applied.slot_gen.insert(slot, generation);
             if let Some(entry) = want.as_deref().and_then(|n| body_catalog.find(slot, n)) {
-                spawn_garment(&mut commands, &assets, body, level, slot, entry);
+                spawn_garment(&mut commands, &assets, body, level, slot, generation, entry);
             }
             applied.items.insert(slot, want);
         }
@@ -395,6 +408,7 @@ fn attach_garments(
                 Equipped {
                     body,
                     slot: garment.slot,
+                    generation: garment.generation,
                     hides: garment.hides.clone(),
                 },
             ));
@@ -469,6 +483,7 @@ fn sync_attachments(
     names: Query<&Name>,
     transforms: Query<(&Transform, Option<&ChildOf>)>,
     existing: Query<(Entity, &Attachment)>,
+    ready: Query<(), With<AttachmentReady>>,
 ) {
     for (avatar, mut applied) in &mut avatars {
         let Some((body, body_type, level)) = applied.current else {
@@ -494,11 +509,16 @@ fn sync_attachments(
         else {
             continue;
         };
+        // The previous attachments stay until the new ones are ready (`retire_replaced`); the ones
+        // still loading from an older request are dropped.
         for (entity, a) in &existing {
-            if a.body == body {
+            if a.body == body && !ready.contains(entity) {
                 commands.entity(entity).try_despawn();
             }
         }
+        applied.next_gen += 1;
+        let generation = applied.next_gen;
+        applied.slot_gen.insert(Slot::Hair, generation);
 
         // Authored in metres; cancel the scale the skeleton carries down to the head bone.
         let local = Transform::from_scale(Vec3::splat(1.0 / world_scale(head, &transforms)));
@@ -524,15 +544,23 @@ fn sync_attachments(
                 continue;
             };
             for glb in &entry.glbs {
-                commands.spawn((
-                    Attachment { body, slot },
-                    OwnedBy(body),
-                    WorldAssetRoot(
-                        assets.load(GltfAssetLabel::Scene(0).from_asset(level.model_path(glb))),
-                    ),
-                    local,
-                    ChildOf(head),
-                ));
+                commands
+                    .spawn((
+                        Attachment {
+                            body,
+                            slot,
+                            generation,
+                        },
+                        OwnedBy(body),
+                        WorldAssetRoot(
+                            assets.load(GltfAssetLabel::Scene(0).from_asset(level.model_path(glb))),
+                        ),
+                        local,
+                        ChildOf(head),
+                    ))
+                    .observe(|ev: On<WorldInstanceReady>, mut commands: Commands| {
+                        commands.entity(ev.entity).try_insert(AttachmentReady);
+                    });
             }
         }
         applied.attachments = Some(want);
@@ -552,6 +580,7 @@ fn settle_bodies(
         (With<Body>, With<BodyReady>),
     >,
     pending: Query<&PendingGarment>,
+    attachments: Query<(&Attachment, Has<AttachmentReady>)>,
 ) {
     for mut applied in &mut avatars {
         let Some((current, _, _)) = applied.current else {
@@ -564,6 +593,9 @@ fn settle_bodies(
             continue;
         };
         let complete = !pending.iter().any(|p| p.body == current)
+            && !attachments
+                .iter()
+                .any(|(a, ready)| a.body == current && !ready)
             && applied.attachments.as_ref().is_some_and(|a| a.0 == current)
             && atlas.is_built()
             && materials.textures_loaded(&assets, &toon_materials)
@@ -590,6 +622,49 @@ fn settle_bodies(
                 debug!("body {current:?} settled");
                 applied.shown = Some(current);
             }
+        }
+    }
+}
+
+/// Removes the garments and attachments that a newer one has replaced, once the newer ones are in.
+/// Until then the old ones stay, so the body never has a hole while a piece downloads.
+fn retire_replaced(
+    mut commands: Commands,
+    avatars: Query<&Applied>,
+    bodies: Query<&Body>,
+    pending: Query<&PendingGarment>,
+    equipped: Query<(Entity, &Equipped)>,
+    attachments: Query<(Entity, &Attachment, Has<AttachmentReady>)>,
+) {
+    for (entity, eq) in &equipped {
+        let Ok(body) = bodies.get(eq.body) else {
+            continue;
+        };
+        let Ok(applied) = avatars.get(body.avatar) else {
+            continue;
+        };
+        let newest = applied.slot_gen.get(&eq.slot).copied().unwrap_or(0);
+        let waiting = pending
+            .iter()
+            .any(|p| p.body == eq.body && p.slot == eq.slot);
+        if eq.generation < newest && !waiting {
+            commands.entity(entity).try_despawn();
+        }
+    }
+    for (entity, a, _) in &attachments {
+        let Ok(body) = bodies.get(a.body) else {
+            continue;
+        };
+        let Ok(applied) = avatars.get(body.avatar) else {
+            continue;
+        };
+        let newest = applied.slot_gen.get(&Slot::Hair).copied().unwrap_or(0);
+        let newest_ready = attachments
+            .iter()
+            .filter(|(_, o, _)| o.body == a.body && o.generation == newest)
+            .all(|(_, _, ready)| ready);
+        if a.generation < newest && newest_ready {
+            commands.entity(entity).try_despawn();
         }
     }
 }

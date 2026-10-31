@@ -261,6 +261,7 @@ fn refresh_panel_text(
     health: Res<ServerHealth>,
     expanded: Res<PanelExpanded>,
     window: Single<&Window, With<PrimaryWindow>>,
+    tier: Option<Res<toon_avatar::DeviceTier>>,
     mut text: Single<&mut Text, With<StatusPanelText>>,
 ) {
     let log_tail = if expanded.0 {
@@ -270,7 +271,10 @@ fn refresh_panel_text(
     };
     let state_name = format!("{:?}", app_state.get());
     let last_event = connection.last_event.label();
-    let build = current_build_label();
+    let build = match tier {
+        Some(tier) => format!("{} · gráficos {}", current_build_label(), tier.label()),
+        None => current_build_label(),
+    };
     let window_text = window_label(window.width(), window.height(), window.scale_factor());
     let data = PanelData {
         env: config.game_env,

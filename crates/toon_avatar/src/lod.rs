@@ -16,7 +16,7 @@ use bevy::{prelude::*, render::renderer::RenderAdapterInfo};
 use crate::{avatar::Avatar, quality::Quality};
 
 /// How much the device can draw.
-#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Resource, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DeviceTier {
     Low,
     Mid,
@@ -306,6 +306,9 @@ pub fn too_slow(samples_ms: &[f32], tier: DeviceTier) -> bool {
 /// Lowers the tier when frames stay too slow.
 #[derive(Resource, Default)]
 pub struct FrameGovernor {
+    /// The tier never goes below this one: a flagship that stutters while assets download is still a
+    /// flagship (set from the detected tier).
+    floor: Option<DeviceTier>,
     samples_ms: Vec<f32>,
     window_secs: f32,
     slow_windows: u8,
@@ -313,6 +316,14 @@ pub struct FrameGovernor {
 
 const GOVERNOR_WINDOW_SECS: f32 = 5.0;
 const GOVERNOR_SLOW_WINDOWS: u8 = 2;
+/// Seconds after start-up that the governor ignores: loading and downloading stall frames.
+const GOVERNOR_WARMUP_SECS: f32 = 30.0;
+
+impl FrameGovernor {
+    fn allows(&self, tier: DeviceTier) -> bool {
+        self.floor.is_none_or(|floor| tier >= floor)
+    }
+}
 
 pub struct LodPlugin;
 
@@ -335,6 +346,7 @@ fn detect_device_tier(
     adapter: Option<Res<RenderAdapterInfo>>,
     info: Option<Res<DeviceInfoOverride>>,
     mut preference: ResMut<TierPreference>,
+    mut governor: ResMut<FrameGovernor>,
 ) {
     if let Some(tier) = std::env::var("TOON_AVATAR_TIER")
         .ok()
@@ -356,6 +368,10 @@ fn detect_device_tier(
         device.gpu,
         device.model
     );
+    governor.floor = Some(match tier {
+        DeviceTier::High => DeviceTier::Mid,
+        other => other,
+    });
     commands.insert_resource(tier);
 }
 
@@ -382,7 +398,7 @@ fn govern_tier(
     let Some(mut tier) = tier else {
         return;
     };
-    if *preference != TierPreference::Auto {
+    if *preference != TierPreference::Auto || time.elapsed_secs() < GOVERNOR_WARMUP_SECS {
         return;
     }
     governor.samples_ms.push(time.delta_secs() * 1000.0);
@@ -398,7 +414,7 @@ fn govern_tier(
     governor.samples_ms.clear();
     governor.window_secs = 0.0;
     if governor.slow_windows >= GOVERNOR_SLOW_WINDOWS
-        && let Some(lower) = tier.lower()
+        && let Some(lower) = tier.lower().filter(|l| governor.allows(*l))
     {
         warn!(
             "frames are too slow: lowering the device tier {} -> {}",
@@ -663,6 +679,17 @@ mod tests {
         assert!(!too_slow(&spikes, DeviceTier::High));
         // Too few samples say nothing.
         assert!(!too_slow(&[100.0; 10], DeviceTier::High));
+    }
+
+    #[test]
+    fn a_high_device_is_never_governed_below_mid() {
+        let governor = FrameGovernor {
+            floor: Some(DeviceTier::Mid),
+            ..default()
+        };
+        assert!(governor.allows(DeviceTier::Mid));
+        assert!(!governor.allows(DeviceTier::Low));
+        assert!(FrameGovernor::default().allows(DeviceTier::Low));
     }
 
     #[test]
