@@ -48,6 +48,8 @@ data class GameState(
     val connection: Connection = Connection.Unknown,
     val error: String? = null,
     val room: RoomInfo? = null,
+    /** The room is in build mode (`game_state.build_mode`); only ever true inside a room. */
+    @SerialName("build_mode") val buildMode: Boolean = false,
 ) {
     /** In a room (also while the connection is being restored: the room is kept). */
     val inRoom: Boolean get() = app == AppPhase.InRoom && room != null

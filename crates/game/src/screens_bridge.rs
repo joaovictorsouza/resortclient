@@ -16,6 +16,7 @@
 //! - `inventory_open {"open"}`, `inventory_select {"catalog_id"}`
 //! - `navigator_open {"open"}`, `navigator_tab {"tab"}`, `navigator_query {"query"}`, `navigator_search`,
 //!   `navigator_join {"room_id"}`, `navigator_create {"name","layout_id"}`
+//! - `build_mode_set {"active"}`: turns the room build mode on or off (the state comes back in `game_state.build_mode`)
 //! - `creator_category {"category"}`, `creator_pick {"id"}`, `creator_body {"body_type"}`, `creator_save`,
 //!   `creator_cancel`
 //!
@@ -26,7 +27,7 @@ use crate::character_creator::{
     apply_item_choice, creator_thumbnail_path, save_appearance,
 };
 use crate::config::GameConfig;
-use crate::furniture::PlayerInventoryState;
+use crate::furniture::{BuildModeState, BuildTool, PlayerInventoryState};
 use crate::navigator::{
     ActiveInputFocus, ActiveRoomMetadata, FocusedInput, NavigatorTab, RoomNavigatorState,
 };
@@ -236,6 +237,10 @@ struct OpenCmd {
     open: bool,
 }
 #[derive(Deserialize)]
+struct ActiveCmd {
+    active: bool,
+}
+#[derive(Deserialize)]
 struct IdCmd {
     id: String,
 }
@@ -294,6 +299,7 @@ impl Plugin for ScreensBridgePlugin {
                 publish_creator,
                 shop_commands,
                 inventory_commands,
+                build_mode_commands,
                 navigator_commands,
                 creator_commands,
             ),
@@ -458,6 +464,24 @@ fn inventory_commands(
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Same effect as the bevy_hui build button: toggling off drops the tool and the selection.
+fn build_mode_commands(
+    mut messages: MessageReader<HostMessage>,
+    mut build: ResMut<BuildModeState>,
+) {
+    for msg in messages.read() {
+        if msg.name == "build_mode_set"
+            && let Some(c) = parse::<ActiveCmd>(msg)
+        {
+            build.is_active = c.active;
+            if !c.active {
+                build.active_tool = BuildTool::None;
+                build.selected_furniture_id = None;
+            }
         }
     }
 }

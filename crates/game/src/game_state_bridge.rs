@@ -2,13 +2,15 @@
 //! screen the game is on, the connection, and the current room. Useful to any shell feature, not only the HUD.
 //!
 //! Game -> shell (`HostEvent::App`):
-//! `game_state {"app","connection","error","room"}` when it changes and when the host resumes.
+//! `game_state {"app","connection","error","room","build_mode"}` when it changes and when the host resumes.
 //! - `app`: `loading|login|nickname|creator|connecting|in_room|error` (from `AppState`).
 //! - `connection`: `idle|connecting|connected|reconnecting|disconnected|error` (from `ConnectionStatus`;
 //!   `reconnecting` wins while the worker restores a dropped socket, and the app stays `in_room`).
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
+//! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
 
+use crate::furniture::BuildModeState;
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::navigator::ActiveRoomMetadata;
 use crate::room::ActiveRoom;
@@ -33,6 +35,7 @@ pub struct GameStateSnapshot {
     pub connection: &'static str,
     pub error: Option<String>,
     pub room: Option<RoomInfo>,
+    pub build_mode: bool,
 }
 
 pub fn app_name(state: AppState) -> &'static str {
@@ -65,6 +68,7 @@ pub fn snapshot(
     status: &ConnectionStatus,
     room: &ActiveRoom,
     meta: &ActiveRoomMetadata,
+    build: &BuildModeState,
 ) -> GameStateSnapshot {
     let in_room = state == AppState::InRoom;
     GameStateSnapshot {
@@ -84,6 +88,7 @@ pub fn snapshot(
             visibility: meta.visibility.clone(),
             is_owner: meta.is_owner,
         }),
+        build_mode: in_room && build.is_active,
     }
 }
 
@@ -100,12 +105,13 @@ fn publish_game_state(
     status: Res<ConnectionStatus>,
     room: Res<ActiveRoom>,
     meta: Res<ActiveRoomMetadata>,
+    build: Res<BuildModeState>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<GameStateSnapshot>>,
 ) {
     let resumed = lifecycle.read().any(|m| *m == HostLifecycle::Resumed);
-    let snap = snapshot(*state.get(), &status, &room, &meta);
+    let snap = snapshot(*state.get(), &status, &room, &meta, &build);
     if resumed || last.as_ref() != Some(&snap) {
         if let Ok(payload) = serde_json::to_vec(&snap) {
             outbox.send_app(EVT_GAME_STATE, payload);
@@ -135,6 +141,7 @@ mod tests {
             &ConnectionStatus::default(),
             &ActiveRoom::default(),
             &meta(true),
+            &BuildModeState::default(),
         );
         assert_eq!(snap.app, "login");
         assert_eq!(snap.connection, "idle");
@@ -152,11 +159,26 @@ mod tests {
             &status,
             &ActiveRoom::default(),
             &meta(true),
+            &BuildModeState::default(),
         );
         assert_eq!(snap.connection, "connected");
         let room = snap.room.expect("room");
         assert_eq!((room.id.as_str(), room.name.as_str()), ("r1", "Minha sala"));
         assert!(room.is_owner);
+    }
+
+    #[test]
+    fn build_mode_only_counts_inside_a_room() {
+        let on = BuildModeState {
+            is_active: true,
+            ..Default::default()
+        };
+        let status = ConnectionStatus::default();
+        let room = ActiveRoom::default();
+        let inside = snapshot(AppState::InRoom, &status, &room, &meta(true), &on);
+        assert!(inside.build_mode);
+        let outside = snapshot(AppState::Login, &status, &room, &meta(true), &on);
+        assert!(!outside.build_mode);
     }
 
     #[test]
@@ -171,6 +193,7 @@ mod tests {
             &status,
             &ActiveRoom::default(),
             &meta(false),
+            &BuildModeState::default(),
         );
         assert_eq!(snap.connection, "reconnecting");
         assert!(snap.room.is_some());
@@ -188,6 +211,7 @@ mod tests {
             &status,
             &ActiveRoom::default(),
             &meta(false),
+            &BuildModeState::default(),
         );
         assert_eq!((snap.app, snap.connection), ("error", "error"));
         assert!(snap.error.is_some());
@@ -201,11 +225,12 @@ mod tests {
             &ConnectionStatus::default(),
             &ActiveRoom::default(),
             &meta(false),
+            &BuildModeState::default(),
         ))
         .unwrap();
         assert_eq!(
             json,
-            r#"{"app":"connecting","connection":"idle","error":null,"room":null}"#
+            r#"{"app":"connecting","connection":"idle","error":null,"room":null,"build_mode":false}"#
         );
     }
 }
