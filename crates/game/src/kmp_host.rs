@@ -24,6 +24,13 @@ pub fn pre_plugins(app: &mut App, config: &HostConfig) {
         // SAFETY: runs on the render thread right after it starts, before the game spawns threads.
         unsafe { std::env::set_var("GAME_STORAGE_DIR", dir) };
     }
+    // Settings read from the process environment by the game plugins; the shell passes them in `dev.env`.
+    for (key, value) in &config.env {
+        if key == "GAME_SCENE_STYLE" {
+            // SAFETY: same as above, before the game spawns threads.
+            unsafe { std::env::set_var(key, value) };
+        }
+    }
     match asset_dir(config) {
         Some(dir) => {
             let _ = std::fs::create_dir_all(&dir);

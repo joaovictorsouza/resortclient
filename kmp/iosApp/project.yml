@@ -88,6 +88,7 @@ targets:
             echo "GAME_ENV=$ENV_NAME"
             [ -n "$(get NAKAMA_SERVER_KEY)" ] && echo "NAKAMA_SERVER_KEY=$(get NAKAMA_SERVER_KEY)"
             [ -n "$(get ASSETS_MANIFEST_URL)" ] && echo "ASSETS_MANIFEST_URL=$(get ASSETS_MANIFEST_URL)"
+            [ -n "$(get GAME_SCENE_STYLE)" ] && echo "GAME_SCENE_STYLE=$(get GAME_SCENE_STYLE)"
             true
           } > "$OUT"
         basedOnDependencyAnalysis: false
