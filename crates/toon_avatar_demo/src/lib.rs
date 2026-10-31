@@ -260,9 +260,9 @@ fn setup(
     } else {
         0.0
     };
-    commands.spawn((
+    // `TOON_DEMO_NO_FOCUS=1` makes the avatar a plain one, so `TOON_AVATAR_TIER=low` shows the Low level.
+    let mut avatar = commands.spawn((
         Avatar::new(look),
-        LodFocus,
         start_pose(),
         AvatarHolding(start_prop()),
         AvatarFace {
@@ -272,6 +272,9 @@ fn setup(
         AvatarWalkSpeed(1.3),
         Transform::from_xyz(x, 0.0, 0.0),
     ));
+    if std::env::var("TOON_DEMO_NO_FOCUS").is_err() {
+        avatar.insert(LodFocus);
+    }
     let mut camera = commands.spawn((
         Camera3d::default(),
         // Toon colours are authored for display directly; skip tone mapping.
