@@ -264,7 +264,7 @@ pub fn cdn_settled(cdn: Option<Res<CdnAssets>>) -> bool {
 pub struct JsonText(pub String);
 
 #[derive(Default, TypePath)]
-struct JsonTextLoader;
+pub struct JsonTextLoader;
 
 impl AssetLoader for JsonTextLoader {
     type Asset = JsonText;

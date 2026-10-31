@@ -37,6 +37,7 @@ pub mod navigator_ui;
 pub mod net;
 #[cfg(feature = "kmp-host")]
 pub mod onboarding;
+pub mod pet;
 pub mod preview;
 pub mod room;
 pub mod safe_area;
@@ -164,6 +165,7 @@ impl Plugin for GamePlugin {
             .add_plugins(AvatarPlugin)
             .add_plugins(AvatarAnimationPlugin)
             .add_plugins(AvatarMenuPlugin)
+            .add_plugins(pet::PetPlugin)
             .add_plugins(InputPlugin);
 
         #[cfg(all(target_os = "ios", feature = "winit-host"))]
