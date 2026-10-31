@@ -197,10 +197,10 @@ impl Plugin for ToonAvatarGamePlugin {
                 Update,
                 build_toon_data.run_if(resource_exists::<ToonDataFiles>),
             );
-        // The cartoon look of rooms and objects is off unless asked for: `GAME_SCENE_STYLE=cartoon`
-        // (F10 flips it in debug builds until the settings screen has the option).
+        // The cartoon look of rooms and objects is on by default; `GAME_SCENE_STYLE=standard` turns it
+        // off (F10 flips it in debug builds until the settings screen has the option).
         app.insert_resource(toon_avatar::SceneStyle {
-            cartoon: std::env::var("GAME_SCENE_STYLE").is_ok_and(|v| v == "cartoon"),
+            cartoon: std::env::var("GAME_SCENE_STYLE").map_or(true, |v| v != "standard"),
         });
         #[cfg(debug_assertions)]
         app.add_systems(Update, (debug_emote_shortcuts, debug_toggle_scene_style));
