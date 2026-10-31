@@ -25,9 +25,9 @@ pub struct RoomWall;
 pub const WALL_HEIGHT: f32 = 2.0;
 /// Wall thickness in tiles; walls are centered on the floor edge.
 pub const WALL_THICKNESS: f32 = 0.16;
-/// A wall stands on the ground and rises `WALL_HEIGHT` above the floor surface, so the floor slab
-/// (`0..FLOOR_TILE_TOP`) never shows a wall poking out below it.
-const WALL_TOTAL_HEIGHT: f32 = WALL_HEIGHT + FLOOR_TILE_THICKNESS;
+/// Height of a wall box's center: the wall sits on the floor surface and rises `WALL_HEIGHT`, so no
+/// part of it hangs below the floor slab's edge.
+const WALL_CENTER_Y: f32 = FLOOR_TILE_THICKNESS + WALL_HEIGHT / 2.0;
 /// Opacity of a wall that stands between the camera and the local avatar.
 const GHOST_WALL_ALPHA: f32 = 0.22;
 /// Height of the point on the avatar that must stay visible.
@@ -113,21 +113,21 @@ pub fn wall_pieces(heightmap: &[String]) -> Vec<WallPiece> {
 /// Center and size of a wall piece's box (centered on the floor edge).
 pub fn wall_box(piece: &WallPiece) -> (Vec3, Vec3) {
     let (x, z) = (piece.x as f32, piece.z as f32);
-    let y = WALL_TOTAL_HEIGHT / 2.0;
+    let y = WALL_CENTER_Y;
     match piece.side {
         WallSide::North => (
             Vec3::new(x + 0.5, y, z),
-            Vec3::new(1.0, WALL_TOTAL_HEIGHT, WALL_THICKNESS),
+            Vec3::new(1.0, WALL_HEIGHT, WALL_THICKNESS),
         ),
         WallSide::West => (
             Vec3::new(x, y, z + 0.5),
-            Vec3::new(WALL_THICKNESS, WALL_TOTAL_HEIGHT, 1.0),
+            Vec3::new(WALL_THICKNESS, WALL_HEIGHT, 1.0),
         ),
     }
 }
 
-/// Grid vertices where at least two wall pieces meet (or a piece ends): a post fills them so
-/// corners are closed and staircase walls have no gaps.
+/// Grid vertices where at least two wall pieces meet: a post fills them so corners are closed.
+/// A wall's free end gets no post (it would stick out past the floor edge).
 pub fn wall_posts(pieces: &[WallPiece]) -> Vec<(i32, i32)> {
     use std::collections::HashMap;
     let mut counts: HashMap<(i32, i32), u32> = HashMap::new();
@@ -140,7 +140,11 @@ pub fn wall_posts(pieces: &[WallPiece]) -> Vec<(i32, i32)> {
             *counts.entry(end).or_default() += 1;
         }
     }
-    let mut posts: Vec<_> = counts.into_keys().collect();
+    let mut posts: Vec<_> = counts
+        .into_iter()
+        .filter(|&(_, n)| n >= 2)
+        .map(|(v, _)| v)
+        .collect();
     posts.sort();
     posts
 }
@@ -298,8 +302,8 @@ fn handle_room_snapshot(
         let mut boxes: Vec<(Vec3, Vec3)> = pieces.iter().map(wall_box).collect();
         for (x, z) in wall_posts(&pieces) {
             boxes.push((
-                Vec3::new(x as f32, WALL_TOTAL_HEIGHT / 2.0, z as f32),
-                Vec3::new(WALL_THICKNESS, WALL_TOTAL_HEIGHT, WALL_THICKNESS),
+                Vec3::new(x as f32, WALL_CENTER_Y, z as f32),
+                Vec3::new(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS),
             ));
         }
         for (center, size) in boxes {
@@ -451,7 +455,7 @@ mod tests {
             side: WallSide::North,
         });
         assert_eq!(center.z, 0.0);
-        assert_eq!(size.y, WALL_TOTAL_HEIGHT);
+        assert_eq!(size.y, WALL_HEIGHT);
     }
 
     #[test]
