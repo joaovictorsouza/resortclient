@@ -84,7 +84,7 @@ pub fn cosmetics_of(catalogs: &GetCatalogsResponse) -> Option<CharacterCatalog> 
 
 /// Catalog published with the assets: what a first launch uses before the server has ever answered
 /// (the character creator opens before the connection), and the server's reply replaces it.
-const CDN_COSMETICS_FILE: &str = "characters/catalog.json";
+const CDN_COSMETICS_FILE: &str = "characters/cosmetics_v3.json";
 
 #[derive(Resource)]
 struct CdnCosmeticsFile(Handle<JsonText>);
