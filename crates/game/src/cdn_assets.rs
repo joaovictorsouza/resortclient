@@ -259,7 +259,7 @@ pub fn cdn_settled(cdn: Option<Res<CdnAssets>>) -> bool {
 }
 
 /// A `.json` file read as text, loaded through the asset server (and so through the CDN):
-/// `clips.json` and `characters/catalog.json`.
+/// `clips.json` and `characters/cosmetics_v3.json`.
 #[derive(Asset, TypePath, Debug)]
 pub struct JsonText(pub String);
 

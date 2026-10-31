@@ -84,7 +84,7 @@ pub fn cosmetics_of(catalogs: &GetCatalogsResponse) -> Option<CharacterCatalog> 
 
 /// Catalog published with the assets: what a first launch uses before the server has ever answered
 /// (the character creator opens before the connection), and the server's reply replaces it.
-const CDN_COSMETICS_FILE: &str = "characters/catalog.json";
+const CDN_COSMETICS_FILE: &str = "characters/cosmetics_v3.json";
 
 #[derive(Resource)]
 struct CdnCosmeticsFile(Handle<JsonText>);
@@ -198,7 +198,7 @@ mod tests {
         write_cache(&path, &sample()).unwrap();
         let back = read_cache(&path).expect("cache should be readable");
         assert_eq!(back.catalog_version, sample().catalog_version);
-        assert_eq!(cosmetics_of(&back).unwrap().items[0].id, "hat_010");
+        assert_eq!(cosmetics_of(&back).unwrap().items[0].id, "F_head.001");
     }
 
     #[test]

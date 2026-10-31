@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,77 +17,97 @@ pub struct LayoutSnapshot {
     pub heightmap: Vec<String>,
 }
 
+/// The two bodies of the character pack.
+pub const BODY_FEMALE: &str = "female";
+pub const BODY_MALE: &str = "male";
+
+/// Colour groups of an appearance (see the contract, section 17).
+pub const COLOR_GROUPS: &[&str] = &[
+    "skin",
+    "eyes",
+    "underwear",
+    "hair",
+    "hat",
+    "glasses",
+    "top",
+    "bottom",
+    "outfit",
+    "shoes",
+];
+
+/// Face sliders (blend shapes) a player can set, each 0..255.
+pub const FACE_MORPHS: &[&str] = &["eye_size", "nose_length", "tuck_ears", "shorten"];
+
+/// Expressions the face can show (section 18 of the contract).
+pub const EXPRESSIONS: &[&str] = &["neutral", "happy", "laugh", "sad", "angry", "surprised"];
+
+/// The only avatar action for now: bring the held prop to the mouth.
+pub const ACTION_DRINK: &str = "drink";
+
+/// Modular cosmetic configuration of an avatar (version 2 of the contract).
+///
+/// Item ids are the names of the cosmetics catalog; an empty id means "nothing" for the optional
+/// slots. `colors` maps a colour group to up to six `#RRGGBB` values for the colour slots
+/// A1, A2, B1, B2, C1, C2 of its materials (an empty string keeps the material's own colour).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AvatarAppearance {
-    #[serde(default = "default_skin_color")]
-    pub skin_color: String,
+    #[serde(default = "default_body_type")]
+    pub body_type: String,
     #[serde(default = "default_face_id")]
     pub face_id: String,
     #[serde(default = "default_hair_id")]
     pub hair_id: String,
-    #[serde(default = "default_hair_color")]
-    pub hair_color: String,
+    #[serde(default)]
+    pub hat_id: String,
+    #[serde(default)]
+    pub glasses_id: String,
     #[serde(default = "default_top_id")]
     pub top_id: String,
-    #[serde(default = "default_top_color")]
-    pub top_color: String,
     #[serde(default = "default_bottom_id")]
     pub bottom_id: String,
-    #[serde(default = "default_bottom_color")]
-    pub bottom_color: String,
+    #[serde(default)]
+    pub outfit_id: String,
     #[serde(default = "default_shoes_id")]
     pub shoes_id: String,
-    #[serde(default = "default_shoes_color")]
-    pub shoes_color: String,
     #[serde(default)]
-    pub accessories: Vec<String>,
+    pub colors: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub face_morphs: BTreeMap<String, i32>,
 }
 
-fn default_skin_color() -> String {
-    "#F5D0B5".to_string()
+fn default_body_type() -> String {
+    BODY_FEMALE.to_string()
 }
 fn default_face_id() -> String {
-    "male_emotion_usual_001".to_string()
+    "F_head.001".to_string()
 }
 fn default_hair_id() -> String {
-    "hairstyle_male_010".to_string()
-}
-fn default_hair_color() -> String {
-    "#3D2314".to_string()
+    "Hairstyle.06".to_string()
 }
 fn default_top_id() -> String {
-    "t_shirt_009".to_string()
-}
-fn default_top_color() -> String {
-    "#2196F3".to_string()
+    "Top.01".to_string()
 }
 fn default_bottom_id() -> String {
-    "pants_010".to_string()
-}
-fn default_bottom_color() -> String {
-    "#37474F".to_string()
+    "Bot.01".to_string()
 }
 fn default_shoes_id() -> String {
-    "shoe_sneakers_009".to_string()
-}
-fn default_shoes_color() -> String {
-    "#FFFFFF".to_string()
+    "Shoes.01".to_string()
 }
 
 impl Default for AvatarAppearance {
     fn default() -> Self {
         Self {
-            skin_color: default_skin_color(),
+            body_type: default_body_type(),
             face_id: default_face_id(),
             hair_id: default_hair_id(),
-            hair_color: default_hair_color(),
+            hat_id: String::new(),
+            glasses_id: String::new(),
             top_id: default_top_id(),
-            top_color: default_top_color(),
             bottom_id: default_bottom_id(),
-            bottom_color: default_bottom_color(),
+            outfit_id: String::new(),
             shoes_id: default_shoes_id(),
-            shoes_color: default_shoes_color(),
-            accessories: Vec::new(),
+            colors: BTreeMap::new(),
+            face_morphs: BTreeMap::new(),
         }
     }
 }
@@ -98,6 +120,12 @@ pub struct AvatarSnapshot {
     pub z: i32,
     #[serde(default)]
     pub appearance: Option<AvatarAppearance>,
+    /// One of [`EXPRESSIONS`]; empty is neutral.
+    #[serde(default)]
+    pub expression: String,
+    /// Id of the prop in the right hand; empty is nothing.
+    #[serde(default)]
+    pub holding: String,
     #[serde(default)]
     pub posture: Posture,
     /// Facing, 0..7 in 45° steps (0 = +Z, 2 = +X, 4 = -Z, 6 = -X).
@@ -147,6 +175,12 @@ pub struct AvatarJoined {
     pub z: i32,
     #[serde(default)]
     pub appearance: Option<AvatarAppearance>,
+    /// One of [`EXPRESSIONS`]; empty is neutral.
+    #[serde(default)]
+    pub expression: String,
+    /// Id of the prop in the right hand; empty is nothing.
+    #[serde(default)]
+    pub holding: String,
     #[serde(default)]
     pub posture: Posture,
     /// Facing, 0..7 in 45° steps (0 = +Z, 2 = +X, 4 = -Z, 6 = -X).
@@ -171,6 +205,40 @@ pub struct UpdateAppearanceRequest {
 pub struct AvatarAppearanceUpdated {
     pub user_id: String,
     pub appearance: AvatarAppearance,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetExpressionRequest {
+    pub expression: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvatarExpressionChanged {
+    pub user_id: String,
+    pub expression: String,
+}
+
+/// Holds a prop (a catalog item of category `prop`) or, with an empty id, puts it down.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SetHoldingRequest {
+    pub prop_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvatarHoldingChanged {
+    pub user_id: String,
+    pub prop_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvatarActionRequest {
+    pub action: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AvatarAction {
+    pub user_id: String,
+    pub action: String,
 }
 
 /// Server-authoritative resting posture of an avatar (spec 0004 do servidor).
@@ -293,6 +361,9 @@ pub enum ClientMessage {
     RotateItem(RotateItemRequest),
     PickupItem(PickupItemRequest),
     UpdateAppearance(Box<UpdateAppearanceRequest>),
+    SetExpression(SetExpressionRequest),
+    SetHolding(SetHoldingRequest),
+    AvatarAction(AvatarActionRequest),
 }
 
 /// Enumeration of all messages received by the client from the server
@@ -312,6 +383,9 @@ pub enum ServerMessage {
     BuildModeRejected(BuildModeRejected),
     AvatarAppearanceUpdated(AvatarAppearanceUpdated),
     AvatarPostureChanged(AvatarPostureChanged),
+    AvatarExpressionChanged(AvatarExpressionChanged),
+    AvatarHoldingChanged(AvatarHoldingChanged),
+    AvatarAction(AvatarAction),
 }
 
 // ---------------------------------------------------------------------------

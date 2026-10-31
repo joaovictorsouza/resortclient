@@ -42,6 +42,7 @@ pub mod secure_store;
 pub mod shop;
 pub mod state;
 pub mod status_panel;
+pub mod toon;
 pub mod touch_scroll;
 pub mod ui_scale;
 pub mod wallet;
@@ -153,6 +154,7 @@ impl Plugin for GamePlugin {
             .add_plugins(InventoryPlugin)
             .add_plugins(WalletPlugin)
             .add_plugins(ShopPlugin)
+            .add_plugins(toon::ToonAvatarGamePlugin)
             .add_plugins(AvatarPlugin)
             .add_plugins(AvatarAnimationPlugin)
             .add_plugins(AvatarMenuPlugin)

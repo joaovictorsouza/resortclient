@@ -17,3 +17,4 @@ Este diretório registra as decisões técnicas do cliente Rust/Bevy.
 - [ADR 0012: Cliente público, assets só pela CDN e GitHub Actions manuais](./0012-cliente-publico-e-github-actions-manuais.md)
 - [ADR 0013: Host Kotlin Multiplatform (bevy-kmp), onboarding nativo e login Google](./0013-host-kmp-e-onboarding-nativo.md)
 - [ADR 0014: Remoção do mobile nativo antigo (winit)](./0014-remocao-do-mobile-nativo-antigo.md)
+- [ADR 0015: Personagens toon numa crate reutilizável (`toon_avatar`)](./0015-crate-de-personagens-toon.md)
