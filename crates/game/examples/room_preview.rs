@@ -58,10 +58,10 @@ fn setup(
     ));
     commands.insert_resource(Target(target.clone()));
     // A room with a stepped (staircase) west boundary, like the lobby's.
-    let heightmap: Vec<String> = ["000000", "x00000", "xx0000", "xxx000", "xxxx00"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    // `ROOM_MAP=000000,x00000,...` (rows separated by commas) replaces the default layout.
+    let rows =
+        std::env::var("ROOM_MAP").unwrap_or_else(|_| "000000,x00000,xx0000,xxx000,xxxx00".into());
+    let heightmap: Vec<String> = rows.split(',').map(|s| s.to_string()).collect();
     snapshots.write(NetRoomSnapshotEvent(RoomSnapshot {
         room_id: "preview".into(),
         room_name: "Preview".into(),
