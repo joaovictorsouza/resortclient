@@ -36,14 +36,6 @@ pub fn look_from_appearance(appearance: &AvatarAppearance) -> AvatarLook {
         group_colors.insert(group, values.iter().map(|hex| parse_hex_rgb(hex)).collect());
     }
     fill_skin(appearance, &mut group_colors);
-    // The male body mask has a few skin pixels (one hand, the toes) in the underwear region, which the
-    // material paints red: without a chosen underwear colour it follows the skin instead.
-    if appearance.body_type == protocol::BODY_MALE
-        && !group_colors.contains_key(&ColorGroup::Underwear)
-    {
-        let skin = group_colors[&ColorGroup::Skin].clone();
-        group_colors.insert(ColorGroup::Underwear, skin);
-    }
     AvatarLook {
         body: if appearance.body_type == protocol::BODY_MALE {
             BodyType::Male
@@ -299,33 +291,6 @@ mod tests {
     }
 
     #[test]
-    fn the_male_underwear_follows_the_skin_unless_chosen() {
-        let male = AvatarAppearance {
-            body_type: "male".into(),
-            ..AvatarAppearance::default()
-        };
-        let look = look_from_appearance(&male);
-        assert_eq!(
-            look.group_colors[&ColorGroup::Underwear],
-            look.group_colors[&ColorGroup::Skin]
-        );
-        // A female body keeps its own (white) underwear, and a chosen colour wins.
-        assert!(
-            !look_from_appearance(&AvatarAppearance::default())
-                .group_colors
-                .contains_key(&ColorGroup::Underwear)
-        );
-        let mut chosen = male;
-        chosen
-            .colors
-            .insert("underwear".into(), vec!["#112233".into(), "#445566".into()]);
-        assert_ne!(
-            look_from_appearance(&chosen).group_colors[&ColorGroup::Underwear],
-            look_from_appearance(&chosen).group_colors[&ColorGroup::Skin]
-        );
-    }
-
-    #[test]
     fn colors_become_group_colors_with_empty_and_bad_values_left_to_the_material() {
         let mut appearance = AvatarAppearance {
             body_type: "male".into(),
@@ -351,8 +316,8 @@ mod tests {
         );
         assert_eq!(
             look.group_colors.len(),
-            3,
-            "an unknown group is ignored; the skin is always filled and the male underwear follows it"
+            2,
+            "an unknown group is ignored; the skin is always filled"
         );
     }
 
