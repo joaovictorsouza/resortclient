@@ -57,8 +57,8 @@ fn setup(
         None,
     ));
     commands.insert_resource(Target(target.clone()));
-    // An L-shaped room with a hole, to get inner and outer corners.
-    let heightmap: Vec<String> = ["000000", "000000", "0000xx", "0000xx"]
+    // A room with a stepped (staircase) west boundary, like the lobby's.
+    let heightmap: Vec<String> = ["000000", "x00000", "xx0000", "xxx000", "xxxx00"]
         .iter()
         .map(|s| s.to_string())
         .collect();
@@ -69,7 +69,7 @@ fn setup(
         layout: LayoutSnapshot {
             id: "preview".into(),
             width: 6,
-            height: 4,
+            height: 5,
             door: [0, 0],
             heightmap,
         },

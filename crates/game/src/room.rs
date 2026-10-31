@@ -83,6 +83,28 @@ pub fn wall_pieces(heightmap: &[String]) -> Vec<WallPiece> {
                     side: WallSide::West,
                 });
             }
+            // A one-tile step in the boundary leaves a hole between two wall pieces that the posts
+            // (one grid line wide) do not cover: add the wall along the step's face.
+            if !is_floor(heightmap, x - 1, z)
+                && !is_floor(heightmap, x, z + 1)
+                && is_floor(heightmap, x + 1, z + 1)
+            {
+                pieces.push(WallPiece {
+                    x,
+                    z: z + 1,
+                    side: WallSide::North,
+                });
+            }
+            if !is_floor(heightmap, x, z - 1)
+                && !is_floor(heightmap, x + 1, z)
+                && is_floor(heightmap, x + 1, z + 1)
+            {
+                pieces.push(WallPiece {
+                    x: x + 1,
+                    z,
+                    side: WallSide::West,
+                });
+            }
         }
     }
     pieces
@@ -391,7 +413,34 @@ mod tests {
                 .iter()
                 .any(|p| p.side == WallSide::North && p.x == 1 && p.z == 1)
         );
-        assert!(!pieces.iter().any(|p| p.x == 1 && p.z == 0));
+        // Only the notch's side wall is added at x=1 (the step's face), never a north wall on the hole itself.
+        assert!(
+            !pieces
+                .iter()
+                .any(|p| p.x == 1 && p.z == 0 && p.side == WallSide::North)
+        );
+    }
+
+    #[test]
+    fn a_staircase_boundary_has_no_gap_between_wall_pieces() {
+        // The west boundary steps one tile per row: x=0 on row 0, x=1 on row 1, x=2 on row 2.
+        let map: Vec<String> = ["000", "x00", "xx0"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let pieces = wall_pieces(&map);
+        let has = |x, z, side| {
+            pieces
+                .iter()
+                .any(|p| p.x == x && p.z == z && p.side == side)
+        };
+        // West pieces of the three rows ...
+        assert!(
+            has(0, 0, WallSide::West) && has(1, 1, WallSide::West) && has(2, 2, WallSide::West)
+        );
+        // ... joined along the faces of the steps (the edges between row 0/1 at x=0..1 and row 1/2 at x=1..2).
+        assert!(has(0, 1, WallSide::North));
+        assert!(has(1, 2, WallSide::North));
     }
 
     #[test]
