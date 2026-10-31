@@ -23,7 +23,7 @@
 
 use crate::character_creator::{
     CatalogItem, CharacterCatalog, CharacterCreatorState, CreatorCategory, apply_body_choice,
-    apply_item_choice, save_appearance,
+    apply_item_choice, creator_thumbnail_path, save_appearance,
 };
 use crate::config::GameConfig;
 use crate::furniture::PlayerInventoryState;
@@ -166,12 +166,6 @@ pub struct CreatorSnapshot {
     pub categories: Vec<CreatorSection>,
 }
 
-/// Asset path of a character part's thumbnail (rendered by `resort-game-assets`, see
-/// `tools/asset_pipeline/render_character_thumbnails.py`).
-pub fn creator_thumbnail_path(id: &str) -> String {
-    format!("ui/thumbs/characters/{id}.png")
-}
-
 fn selected_id(category: CreatorCategory, a: &AvatarAppearance) -> Vec<&str> {
     match category {
         CreatorCategory::Face => vec![a.face_id.as_str()],
@@ -219,7 +213,10 @@ pub fn creator_snapshot(
                     selected: picked.contains(&i.id.as_str()),
                 })
                 .collect();
-            CreatorSection { key: cat.key(), items }
+            CreatorSection {
+                key: cat.key(),
+                items,
+            }
         })
         .collect();
     CreatorSnapshot {
@@ -329,7 +326,13 @@ fn publish_shop(
     outbox: Res<Outbox>,
     mut last: Local<Option<ShopSnapshot>>,
 ) {
-    publish(&outbox, EVT_SHOP, ShopSnapshot::from(&*shop), resumed(&mut lifecycle), &mut last);
+    publish(
+        &outbox,
+        EVT_SHOP,
+        ShopSnapshot::from(&*shop),
+        resumed(&mut lifecycle),
+        &mut last,
+    );
 }
 
 fn publish_inventory(
@@ -404,7 +407,9 @@ fn shop_commands(
                 }
             }
             "shop_purchase" => {
-                let Some(c) = parse::<CatalogIdCmd>(msg) else { continue };
+                let Some(c) = parse::<CatalogIdCmd>(msg) else {
+                    continue;
+                };
                 if shop.pending.is_some() {
                     continue;
                 }
@@ -566,7 +571,10 @@ mod tests {
 
     #[test]
     fn creator_thumbnails_live_under_the_characters_folder() {
-        assert_eq!(creator_thumbnail_path("Bot.01"), "ui/thumbs/characters/Bot.01.png");
+        assert_eq!(
+            creator_thumbnail_path("Bot.01"),
+            "ui/thumbs/characters/Bot.01.png"
+        );
     }
 
     #[test]
@@ -583,14 +591,20 @@ mod tests {
         let snap = creator_snapshot(true, &state, &catalog);
         assert_eq!(snap.categories.len(), CreatorCategory::ALL.len());
         let face = snap.categories.iter().find(|c| c.key == "face").unwrap();
-        assert!(face.items.iter().any(|i| i.selected && i.id == state.appearance.face_id));
+        assert!(
+            face.items
+                .iter()
+                .any(|i| i.selected && i.id == state.appearance.face_id)
+        );
         assert!(face.items.iter().all(|i| i.thumbnail.ends_with(".png")));
     }
 
     #[test]
     fn a_shop_status_serialises_with_its_kind() {
-        let mut shop = ShopState::default();
-        shop.status = Some(ShopStatus::Error("x".into()));
+        let shop = ShopState {
+            status: Some(ShopStatus::Error("x".into())),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&ShopSnapshot::from(&shop).status).unwrap();
         assert_eq!(json, r#"{"kind":"error","text":"x"}"#);
     }

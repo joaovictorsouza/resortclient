@@ -139,7 +139,11 @@ pub fn input_value(nav: &RoomNavigatorState) -> &str {
 // Actions shared by buttons and the Enter key
 // ---------------------------------------------------------------------------
 
-pub(crate) fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
+pub(crate) fn select_tab(
+    tab: NavigatorTab,
+    nav: &mut RoomNavigatorState,
+    net: Option<&NakamaResource>,
+) {
     nav.current_tab = tab;
     let Some(net) = net else { return };
     match tab {

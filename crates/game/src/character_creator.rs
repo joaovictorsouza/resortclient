@@ -26,6 +26,12 @@ const TAB_BG_SELECTED: &str = "#4f46e5"; // indigo-600
 const OPTION_EDGE: &str = "#334155"; // slate-700
 const OPTION_EDGE_SELECTED: &str = "#818cf8"; // indigo-400
 
+/// Asset path of a character part's thumbnail (`ui/thumbs/characters/<id>.png`), rendered by the
+/// `toon_avatar_demo` thumbnail mode (`TOON_DEMO_THUMBS`) and published to the CDN.
+pub fn creator_thumbnail_path(id: &str) -> String {
+    format!("ui/thumbs/characters/{id}.png")
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CreatorCategory {
     Body,
@@ -895,6 +901,7 @@ fn spawn_items(
                     .with("category", category.key())
                     .with("id", &item.id)
                     .with("label", &item.name)
+                    .with("thumb", &creator_thumbnail_path(&item.id))
                     .with("bg", if selected { TAB_BG_SELECTED } else { TAB_BG })
                     .with(
                         "edge",

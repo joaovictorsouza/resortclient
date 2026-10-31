@@ -178,6 +178,138 @@ fn snapshot(
     }
 }
 
+/// Side of the square thumbnails (`TOON_DEMO_THUMBS`).
+const THUMB_SIZE: u32 = 256;
+
+/// `TOON_DEMO_THUMBS=<dir>` renders one transparent PNG per wardrobe item (`<dir>/<item name>.png`)
+/// and quits: the pictures the creator shows instead of the item names. Items that already have a
+/// picture are skipped, unless `TOON_DEMO_THUMBS_FORCE` is set.
+fn thumbs_dir() -> Option<PathBuf> {
+    std::env::var("TOON_DEMO_THUMBS").ok().map(PathBuf::from)
+}
+
+/// Where the camera looks for a slot: heads close, clothes at the body part, shoes at the feet.
+fn thumb_camera(slot: Slot) -> Transform {
+    let (eye, target) = match slot {
+        Slot::Face | Slot::Hair | Slot::Hat | Slot::Glasses => {
+            (Vec3::new(0.0, 1.52, 0.85), Vec3::new(0.0, 1.48, 0.0))
+        }
+        Slot::Top => (Vec3::new(0.0, 1.2, 1.25), Vec3::new(0.0, 1.15, 0.0)),
+        Slot::Outfit => (Vec3::new(0.0, 0.95, 2.3), Vec3::new(0.0, 0.9, 0.0)),
+        Slot::Bottom => (Vec3::new(0.0, 0.55, 1.45), Vec3::new(0.0, 0.5, 0.0)),
+        Slot::Shoes => (Vec3::new(0.0, 0.25, 0.9), Vec3::new(0.0, 0.1, 0.0)),
+    };
+    Transform::from_translation(eye).looking_at(target, Vec3::Y)
+}
+
+struct ThumbJob {
+    body: BodyType,
+    slot: Slot,
+    name: String,
+}
+
+#[derive(Default)]
+struct ThumbRun {
+    jobs: Option<Vec<ThumbJob>>,
+    next: usize,
+    /// When the current job was applied, and whether its picture was already requested.
+    applied_at: Option<f32>,
+    shot: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn thumbnails(
+    mut commands: Commands,
+    time: Res<Time>,
+    catalog: Res<AvatarCatalog>,
+    target: Option<Res<SnapshotTarget>>,
+    mut avatars: Query<&mut Avatar>,
+    mut cameras: Query<&mut Transform, With<Camera3d>>,
+    mut run: Local<ThumbRun>,
+    mut exit: MessageWriter<AppExit>,
+) {
+    let (Some(dir), Some(target)) = (thumbs_dir(), target) else {
+        return;
+    };
+    let Ok(mut avatar) = avatars.single_mut() else {
+        return;
+    };
+    let now = time.elapsed_secs();
+    let force = std::env::var("TOON_DEMO_THUMBS_FORCE").is_ok();
+    if run.jobs.is_none() {
+        let _ = std::fs::create_dir_all(&dir);
+        let mut seen = std::collections::HashSet::new();
+        let mut jobs = Vec::new();
+        for body in [BodyType::Female, BodyType::Male] {
+            for slot in Slot::ALL {
+                for entry in catalog.of(body).slot(slot) {
+                    let only = std::env::var("TOON_DEMO_THUMBS_ONLY")
+                        .map_or(true, |v| v.split(',').any(|n| n == entry.name));
+                    let done = !only || dir.join(format!("{}.png", entry.name)).exists() && !force;
+                    if !done && seen.insert(entry.name.clone()) {
+                        jobs.push(ThumbJob {
+                            body,
+                            slot,
+                            name: entry.name.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        info!(
+            "thumbnails: {} to render into {}",
+            jobs.len(),
+            dir.display()
+        );
+        run.jobs = Some(jobs);
+    }
+    let total = run.jobs.as_ref().map_or(0, Vec::len);
+    if run.next >= total {
+        exit.write(AppExit::Success);
+        return;
+    }
+    // Let the first avatar and its textures load before the first picture.
+    if run.applied_at.is_none() && now < 10.0 {
+        return;
+    }
+    let (body, slot, name) = {
+        let job = &run.jobs.as_ref().unwrap()[run.next];
+        (job.body, job.slot, job.name.clone())
+    };
+    match run.applied_at {
+        None => {
+            let mut look = starting_look(&catalog);
+            look.body = body;
+            reconcile(&mut look, &catalog);
+            if slot == Slot::Outfit {
+                look.set_item(Slot::Top, None);
+                look.set_item(Slot::Bottom, None);
+            }
+            look.set_item(slot, Some(name));
+            avatar.look = look;
+            if let Ok(mut camera) = cameras.single_mut() {
+                *camera = thumb_camera(slot);
+            }
+            run.applied_at = Some(now);
+            run.shot = false;
+        }
+        Some(at) if !run.shot && now > at + 3.0 => {
+            let path = dir.join(format!("{name}.png"));
+            commands
+                .spawn(bevy::render::view::screenshot::Screenshot::image(
+                    target.0.clone(),
+                ))
+                .observe(bevy::render::view::screenshot::save_to_disk(path));
+            run.shot = true;
+        }
+        Some(at) if run.shot && now > at + 4.5 => {
+            run.next += 1;
+            run.applied_at = None;
+        }
+        _ => {}
+    }
+}
+
 #[bevy_main]
 pub fn main() {
     let dir = assets_dir();
@@ -200,7 +332,12 @@ pub fn main() {
         ))
         .insert_resource(catalog)
         .insert_resource(materials)
-        .insert_resource(ClearColor(Color::srgb(0.25, 0.3, 0.45)))
+        .insert_resource(if thumbs_dir().is_some() {
+            // The PNG is saved without alpha, so the picture gets the creator's own slate backdrop.
+            ClearColor(Color::srgb(0.20, 0.25, 0.33))
+        } else {
+            ClearColor(Color::srgb(0.25, 0.3, 0.45))
+        })
         .add_systems(
             Startup,
             move |commands: Commands,
@@ -222,6 +359,7 @@ pub fn main() {
                 scripted_hair_swap,
                 log_render_stats,
                 snapshot,
+                thumbnails,
             ),
         );
     if let Some(animations) = animations {
@@ -321,10 +459,15 @@ fn setup(
         bevy::core_pipeline::tonemapping::Tonemapping::None,
         camera_transform(),
     ));
-    if std::env::var("TOON_DEMO_SNAPSHOT").is_ok() {
+    if std::env::var("TOON_DEMO_SNAPSHOT").is_ok() || thumbs_dir().is_some() {
+        let (width, height) = if thumbs_dir().is_some() {
+            (THUMB_SIZE, THUMB_SIZE)
+        } else {
+            (900, 1300)
+        };
         let target = images.add(Image::new_target_texture(
-            900,
-            1300,
+            width,
+            height,
             bevy::render::render_resource::TextureFormat::Rgba8UnormSrgb,
             None,
         ));
