@@ -52,6 +52,7 @@ bevy = { workspace = true, default-features = false, features = ["jpeg", "wav"] 
 avian3d = { workspace = true }
 protocol = { path = "../protocol" }
 toon_avatar = { path = "../toon_avatar" }
+animals = { path = "../animals" }
 nakama_client = { path = "../nakama_client" }
 uuid = { workspace = true }
 crossbeam-channel = { workspace = true }

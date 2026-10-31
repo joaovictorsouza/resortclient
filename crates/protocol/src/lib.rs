@@ -84,6 +84,13 @@ pub fn decode_server_message(opcode: i64, data: &[u8]) -> Result<ServerMessage, 
             let msg: AvatarAction = serde_json::from_slice(data)?;
             Ok(ServerMessage::AvatarAction(msg))
         }
+        OPCODE_PET_PLACED => Ok(ServerMessage::PetPlaced(serde_json::from_slice(data)?)),
+        OPCODE_PET_PATH => Ok(ServerMessage::PetPath(serde_json::from_slice(data)?)),
+        OPCODE_PET_ACTION => Ok(ServerMessage::PetAction(serde_json::from_slice(data)?)),
+        OPCODE_PET_REMOVED => Ok(ServerMessage::PetRemoved(serde_json::from_slice(data)?)),
+        OPCODE_PET_INTERACT_RESULT => Ok(ServerMessage::PetInteractResult(serde_json::from_slice(
+            data,
+        )?)),
         _ => Err(ProtocolError::UnknownOpcode(opcode)),
     }
 }
@@ -130,6 +137,10 @@ pub fn encode_client_message(msg: &ClientMessage) -> Result<(i64, Vec<u8>), Prot
         ClientMessage::AvatarAction(req) => {
             let bytes = serde_json::to_vec(req)?;
             Ok((OPCODE_AVATAR_ACTION_REQUEST, bytes))
+        }
+        ClientMessage::PetInteract(req) => {
+            let bytes = serde_json::to_vec(req)?;
+            Ok((OPCODE_PET_INTERACT_REQUEST, bytes))
         }
     }
 }
@@ -504,5 +515,76 @@ mod tests {
         assert!(wallet.covers(10, 2));
         assert!(!wallet.covers(11, 0));
         assert!(!wallet.covers(0, 3));
+    }
+
+    #[test]
+    fn pet_messages_match_the_shared_fixtures() {
+        let fixture = |name: &str| {
+            std::fs::read(format!(
+                "{}/../../contract/fixtures/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap()
+        };
+        let ServerMessage::PetPlaced(placed) =
+            decode_server_message(OPCODE_PET_PLACED, &fixture("pet_placed.json")).unwrap()
+        else {
+            panic!("not a pet placed");
+        };
+        assert_eq!(
+            (placed.species.as_str(), placed.breed.as_str()),
+            ("dog", "shihtzu")
+        );
+        assert_eq!(
+            (placed.coat.as_str(), placed.action.as_str()),
+            ("default", "idle")
+        );
+        let ServerMessage::PetPath(path) =
+            decode_server_message(OPCODE_PET_PATH, &fixture("pet_path.json")).unwrap()
+        else {
+            panic!("not a pet path");
+        };
+        assert_eq!(path.path, vec![[5, 3], [6, 3], [6, 4]]);
+        assert_eq!((path.tiles_per_sec, path.action.as_str()), (0.35, "walk"));
+        let ServerMessage::PetAction(action) =
+            decode_server_message(OPCODE_PET_ACTION, &fixture("pet_action.json")).unwrap()
+        else {
+            panic!("not a pet action");
+        };
+        assert_eq!((action.action.as_str(), action.rotation), ("bark", 4));
+        assert!(matches!(
+            decode_server_message(OPCODE_PET_REMOVED, &fixture("pet_removed.json")),
+            Ok(ServerMessage::PetRemoved(_))
+        ));
+        let ServerMessage::PetInteractResult(result) = decode_server_message(
+            OPCODE_PET_INTERACT_RESULT,
+            &fixture("pet_interact_result.json"),
+        )
+        .unwrap() else {
+            panic!("not a result");
+        };
+        assert!(!result.ok);
+        assert_eq!(result.reason, "unsupported_interaction");
+        let request: PetInteractRequest =
+            serde_json::from_slice(&fixture("pet_interact_request.json")).unwrap();
+        let (op, bytes) =
+            encode_client_message(&ClientMessage::PetInteract(request.clone())).unwrap();
+        assert_eq!(op, OPCODE_PET_INTERACT_REQUEST);
+        assert_eq!(
+            serde_json::from_slice::<PetInteractRequest>(&bytes).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn the_room_snapshot_fixture_carries_its_pets_and_one_without_pets_still_parses() {
+        let raw = include_str!("../../../contract/fixtures/room_snapshot.json");
+        let snapshot: RoomSnapshot = serde_json::from_str(raw).unwrap();
+        assert_eq!(snapshot.pets.len(), 1);
+        assert_eq!(snapshot.pets[0].action, "sit");
+        let mut value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        value.as_object_mut().unwrap().remove("pets");
+        let old: RoomSnapshot = serde_json::from_value(value).unwrap();
+        assert!(old.pets.is_empty());
     }
 }

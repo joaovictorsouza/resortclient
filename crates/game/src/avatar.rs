@@ -732,6 +732,7 @@ mod tests {
                 rest_z: 0.0,
             }],
             items: vec![],
+            pets: vec![],
         })
     }
 

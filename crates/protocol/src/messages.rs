@@ -167,6 +167,9 @@ pub struct RoomSnapshot {
     pub avatars: Vec<AvatarSnapshot>,
     #[serde(default)]
     pub items: Vec<PlacedItemSnapshot>,
+    /// The animals of the room (protocol 3.1).
+    #[serde(default)]
+    pub pets: Vec<PetSnapshot>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -347,6 +350,66 @@ pub struct ItemRemoved {
     pub id: String,
 }
 
+/// A pet in the room. The server decides everything it does; also the payload of `PET_PLACED`, which
+/// creates the pet or replaces the one with the same id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetSnapshot {
+    pub id: String,
+    pub catalog_id: String,
+    pub owner_id: String,
+    pub name: String,
+    pub species: String,
+    pub breed: String,
+    pub coat: String,
+    pub x: i32,
+    pub z: i32,
+    /// Facing, 0..7 in 45° steps (0 = +Z, 2 = +X).
+    pub rotation: i32,
+    /// `idle`, `sit`, `lay`, `walk`, `run`, `bark` or `pant`.
+    pub action: String,
+}
+
+pub type PetPlaced = PetSnapshot;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PetPath {
+    pub id: String,
+    pub path: Vec<[i32; 2]>,
+    pub tiles_per_sec: f64,
+    /// The gait: `walk` or `run`.
+    pub action: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetAction {
+    pub id: String,
+    pub action: String,
+    pub x: i32,
+    pub z: i32,
+    pub rotation: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetRemoved {
+    pub id: String,
+}
+
+/// Asks the server for an interaction with a pet (`kind` is open: the server accepts the ones it serves).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetInteractRequest {
+    pub pet_id: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PetInteractResult {
+    pub pet_id: String,
+    pub kind: String,
+    pub ok: bool,
+    #[serde(default)]
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildModeRejected {
     pub reason: String,
@@ -366,6 +429,7 @@ pub enum ClientMessage {
     SetExpression(SetExpressionRequest),
     SetHolding(SetHoldingRequest),
     AvatarAction(AvatarActionRequest),
+    PetInteract(PetInteractRequest),
 }
 
 /// Enumeration of all messages received by the client from the server
@@ -388,6 +452,11 @@ pub enum ServerMessage {
     AvatarExpressionChanged(AvatarExpressionChanged),
     AvatarHoldingChanged(AvatarHoldingChanged),
     AvatarAction(AvatarAction),
+    PetPlaced(PetPlaced),
+    PetPath(PetPath),
+    PetAction(PetAction),
+    PetRemoved(PetRemoved),
+    PetInteractResult(PetInteractResult),
 }
 
 // ---------------------------------------------------------------------------

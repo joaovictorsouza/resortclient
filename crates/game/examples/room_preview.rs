@@ -75,6 +75,7 @@ fn setup(
         },
         avatars: vec![],
         items: vec![],
+        pets: vec![],
     }));
     commands.spawn((
         DirectionalLight {

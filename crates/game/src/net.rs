@@ -5,8 +5,8 @@ use protocol::{
     AvatarAction, AvatarAppearanceUpdated, AvatarExpressionChanged, AvatarHoldingChanged,
     AvatarJoined, AvatarLeft, AvatarPath, AvatarPostureChanged, BuildModeRejected, ClientMessage,
     GetShopCatalogResponse as ShopCatalogResponse, InventoryItemDto, ItemMoved, ItemPlaced,
-    ItemRemoved, ItemRotated, MoveRejected, MoveRequest, PurchaseItemResponse, RoomSnapshot,
-    ServerMessage, WalletDto,
+    ItemRemoved, ItemRotated, MoveRejected, MoveRequest, PetAction, PetInteractResult, PetPath,
+    PetPlaced, PetRemoved, PurchaseItemResponse, RoomSnapshot, ServerMessage, WalletDto,
 };
 
 use crate::config::GameConfig;
@@ -68,6 +68,32 @@ pub struct NetAvatarHoldingChangedEvent(pub AvatarHoldingChanged);
 
 #[derive(Message, Debug, Clone)]
 pub struct NetAvatarActionEvent(pub AvatarAction);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetPlacedEvent(pub PetPlaced);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetPathEvent(pub PetPath);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetActionEvent(pub PetAction);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetRemovedEvent(pub PetRemoved);
+
+/// The server's answer to a pet interaction request (to the requester only).
+#[derive(Message, Debug, Clone)]
+pub struct NetPetInteractResultEvent(pub PetInteractResult);
+
+/// The writers of the pet messages (bundled to stay under Bevy's parameter limit).
+#[derive(SystemParam)]
+pub struct PetMessageWriters<'w> {
+    placed: MessageWriter<'w, NetPetPlacedEvent>,
+    path: MessageWriter<'w, NetPetPathEvent>,
+    action: MessageWriter<'w, NetPetActionEvent>,
+    removed: MessageWriter<'w, NetPetRemovedEvent>,
+    interaction: MessageWriter<'w, NetPetInteractResultEvent>,
+}
 
 /// The writers of the avatar messages other than movement: appearance, posture, expression, held
 /// prop and avatar action (bundled to stay under Bevy's parameter limit).
@@ -141,6 +167,11 @@ impl Plugin for NetPlugin {
             .add_message::<NetAvatarExpressionChangedEvent>()
             .add_message::<NetAvatarHoldingChangedEvent>()
             .add_message::<NetAvatarActionEvent>()
+            .add_message::<NetPetPlacedEvent>()
+            .add_message::<NetPetPathEvent>()
+            .add_message::<NetPetActionEvent>()
+            .add_message::<NetPetRemovedEvent>()
+            .add_message::<NetPetInteractResultEvent>()
             .add_message::<NetWalletUpdatedEvent>()
             .add_message::<NetShopCatalogLoadedEvent>()
             .add_message::<NetPurchaseSucceededEvent>()
@@ -233,6 +264,7 @@ fn poll_nakama_events(
     mut active_meta: ResMut<ActiveRoomMetadata>,
     mut furni_writers: FurnitureMessageWriters,
     mut emotes: EmoteMessageWriters,
+    mut pets: PetMessageWriters,
     mut economy: EconomyMessageWriters,
     mut connection: ResMut<ConnectionStatus>,
 ) {
@@ -384,6 +416,21 @@ fn poll_nakama_events(
                 }
                 ServerMessage::AvatarAction(action) => {
                     emotes.action.write(NetAvatarActionEvent(action));
+                }
+                ServerMessage::PetPlaced(pet) => {
+                    pets.placed.write(NetPetPlacedEvent(pet));
+                }
+                ServerMessage::PetPath(path) => {
+                    pets.path.write(NetPetPathEvent(path));
+                }
+                ServerMessage::PetAction(action) => {
+                    pets.action.write(NetPetActionEvent(action));
+                }
+                ServerMessage::PetRemoved(removed) => {
+                    pets.removed.write(NetPetRemovedEvent(removed));
+                }
+                ServerMessage::PetInteractResult(result) => {
+                    pets.interaction.write(NetPetInteractResultEvent(result));
                 }
             },
 

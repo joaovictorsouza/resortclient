@@ -44,6 +44,7 @@ pub fn category_label(category: &str) -> &str {
         ALL_CATEGORIES => "Todos",
         "collider" => "Móveis",
         "floor_decoration" => "Pisos",
+        "pet" => "Animais",
         other => other,
     }
 }
@@ -57,7 +58,9 @@ pub fn category_icon(category: &str) -> &'static str {
 }
 
 pub fn type_label(item: &InventoryItemDto) -> &'static str {
-    if item.walkable {
+    if item.category == "pet" {
+        "Animal de estimação"
+    } else if item.walkable {
         "Piso decorativo"
     } else {
         "Móvel sólido"
