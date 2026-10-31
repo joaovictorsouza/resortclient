@@ -25,6 +25,9 @@ pub struct RoomWall;
 pub const WALL_HEIGHT: f32 = 2.0;
 /// Wall thickness in tiles; walls are centered on the floor edge.
 pub const WALL_THICKNESS: f32 = 0.16;
+/// A wall stands on the ground and rises `WALL_HEIGHT` above the floor surface, so the floor slab
+/// (`0..FLOOR_TILE_TOP`) never shows a wall poking out below it.
+const WALL_TOTAL_HEIGHT: f32 = WALL_HEIGHT + FLOOR_TILE_THICKNESS;
 /// Opacity of a wall that stands between the camera and the local avatar.
 const GHOST_WALL_ALPHA: f32 = 0.22;
 /// Height of the point on the avatar that must stay visible.
@@ -88,15 +91,15 @@ pub fn wall_pieces(heightmap: &[String]) -> Vec<WallPiece> {
 /// Center and size of a wall piece's box (centered on the floor edge).
 pub fn wall_box(piece: &WallPiece) -> (Vec3, Vec3) {
     let (x, z) = (piece.x as f32, piece.z as f32);
-    let y = WALL_HEIGHT / 2.0;
+    let y = WALL_TOTAL_HEIGHT / 2.0;
     match piece.side {
         WallSide::North => (
             Vec3::new(x + 0.5, y, z),
-            Vec3::new(1.0, WALL_HEIGHT, WALL_THICKNESS),
+            Vec3::new(1.0, WALL_TOTAL_HEIGHT, WALL_THICKNESS),
         ),
         WallSide::West => (
             Vec3::new(x, y, z + 0.5),
-            Vec3::new(WALL_THICKNESS, WALL_HEIGHT, 1.0),
+            Vec3::new(WALL_THICKNESS, WALL_TOTAL_HEIGHT, 1.0),
         ),
     }
 }
@@ -273,8 +276,8 @@ fn handle_room_snapshot(
         let mut boxes: Vec<(Vec3, Vec3)> = pieces.iter().map(wall_box).collect();
         for (x, z) in wall_posts(&pieces) {
             boxes.push((
-                Vec3::new(x as f32, WALL_HEIGHT / 2.0, z as f32),
-                Vec3::new(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS),
+                Vec3::new(x as f32, WALL_TOTAL_HEIGHT / 2.0, z as f32),
+                Vec3::new(WALL_THICKNESS, WALL_TOTAL_HEIGHT, WALL_THICKNESS),
             ));
         }
         for (center, size) in boxes {
@@ -291,7 +294,7 @@ fn handle_room_snapshot(
         }
         commands.insert_resource(wall_materials);
 
-        let tile_mesh = meshes.add(Cuboid::new(0.96, FLOOR_TILE_THICKNESS, 0.96));
+        let tile_mesh = meshes.add(Cuboid::new(1.0, FLOOR_TILE_THICKNESS, 1.0));
 
         // Curated checkerboard tile palette (subtle modern aesthetic)
         let mat_tile_a = materials.add(StandardMaterial {
@@ -399,7 +402,7 @@ mod tests {
             side: WallSide::North,
         });
         assert_eq!(center.z, 0.0);
-        assert_eq!(size.y, WALL_HEIGHT);
+        assert_eq!(size.y, WALL_TOTAL_HEIGHT);
     }
 
     #[test]
