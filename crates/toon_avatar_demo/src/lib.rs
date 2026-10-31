@@ -17,8 +17,8 @@ use std::path::{Path, PathBuf};
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
     Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarHolding, AvatarLook,
-    AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, HeldProp,
-    LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, SceneStyle, Slot,
+    AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, ColorGroup, DeviceTier, Expression,
+    HeldProp, LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, SceneStyle, Slot,
     TierPreference, ToonAvatarPlugins, ToonSettings, parse_clips, parse_grip,
 };
 
@@ -79,7 +79,21 @@ fn starting_look(catalog: &AvatarCatalog) -> AvatarLook {
     let hair_name = std::env::var("TOON_DEMO_HAIR").unwrap_or_else(|_| "Hairstyle.06".into());
     let c = catalog.of(body);
     let first = |slot: Slot| c.slot(slot).first().map(|e| e.name.clone());
+    let mut group_colors = std::collections::BTreeMap::new();
+    // `TOON_DEMO_DEBUG_COLORS=1` paints the skin blue and the underwear green: shows which region of
+    // the body mask each part of the body uses.
+    if std::env::var("TOON_DEMO_DEBUG_COLORS").is_ok() {
+        group_colors.insert(
+            ColorGroup::Skin,
+            vec![Some([0.0, 0.2, 1.0]), Some([0.0, 0.2, 1.0])],
+        );
+        group_colors.insert(
+            ColorGroup::Underwear,
+            vec![Some([0.0, 1.0, 0.0]), Some([0.0, 1.0, 0.0])],
+        );
+    }
     AvatarLook {
+        group_colors,
         body,
         face: first(Slot::Face),
         top: first(Slot::Top),
