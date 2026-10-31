@@ -458,10 +458,18 @@ fn hide_covered_parts(
     }
 }
 
-/// Product of the local scales from `entity` up to the root.
-fn world_scale(mut entity: Entity, transforms: &Query<(&Transform, Option<&ChildOf>)>) -> f32 {
+/// Product of the local scales from `entity` up to, but not including, `root`: the scale the body's
+/// own skeleton carries. What sits above the body (the game scales the whole avatar to its tile
+/// size) must not be cancelled, or the hair ends up smaller than the head it sits on.
+fn world_scale(
+    mut entity: Entity,
+    root: Entity,
+    transforms: &Query<(&Transform, Option<&ChildOf>)>,
+) -> f32 {
     let mut scale = 1.0;
-    while let Ok((t, parent)) = transforms.get(entity) {
+    while entity != root
+        && let Ok((t, parent)) = transforms.get(entity)
+    {
         scale *= t.scale.x;
         match parent {
             Some(p) => entity = p.parent(),
@@ -521,7 +529,7 @@ fn sync_attachments(
         applied.slot_gen.insert(Slot::Hair, generation);
 
         // Authored in metres; cancel the scale the skeleton carries down to the head bone.
-        let local = Transform::from_scale(Vec3::splat(1.0 / world_scale(head, &transforms)));
+        let local = Transform::from_scale(Vec3::splat(1.0 / world_scale(head, body, &transforms)));
         let body_catalog = catalog.of(body_type);
         let hat_name = look.item(Slot::Hat);
         let hair_entry = hair_or_hat.as_deref().and_then(|n| {
@@ -666,5 +674,32 @@ fn retire_replaced(
         if a.generation < newest && newest_ready {
             commands.entity(entity).try_despawn();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::system::RunSystemOnce;
+
+    use super::*;
+
+    #[test]
+    fn the_scale_cancelled_for_attachments_stops_at_the_body() {
+        let mut world = World::new();
+        let game_node = world.spawn(Transform::from_scale(Vec3::splat(1.128))).id();
+        let body = world.spawn((Transform::default(), ChildOf(game_node))).id();
+        let armature = world
+            .spawn((Transform::from_scale(Vec3::splat(0.01)), ChildOf(body)))
+            .id();
+        let head = world
+            .spawn((Transform::from_scale(Vec3::splat(100.0)), ChildOf(armature)))
+            .id();
+        let scale = world
+            .run_system_once(move |transforms: Query<(&Transform, Option<&ChildOf>)>| {
+                world_scale(head, body, &transforms)
+            })
+            .unwrap();
+        // Only the skeleton's own scale (0.01 * 100); the game's 1.128 above the body stays.
+        assert!((scale - 1.0).abs() < 1e-4, "{scale}");
     }
 }

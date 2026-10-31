@@ -254,6 +254,7 @@ fn toggle_panel(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn refresh_panel_text(
     config: Res<GameConfig>,
     app_state: Res<State<AppState>>,

@@ -180,6 +180,7 @@ pub fn main() {
                 expression_input,
                 prop_input,
                 scripted_drink,
+                scripted_hair_swap,
                 log_render_stats,
                 snapshot,
             ),
@@ -462,6 +463,27 @@ fn scripted_drink(
             if let Some(drinking) = pose.drinking() {
                 *pose = drinking;
             }
+        }
+    }
+}
+
+/// `TOON_DEMO_HAIR_SWAP=<name>@<seconds>` changes the hair after the avatar is already on screen,
+/// the way the character creator does (for captures of the swap).
+fn scripted_hair_swap(
+    time: Res<Time>,
+    mut avatars: Query<&mut Avatar, With<LodFocus>>,
+    mut done: Local<bool>,
+) {
+    let Some((name, at)) = std::env::var("TOON_DEMO_HAIR_SWAP").ok().and_then(|v| {
+        v.split_once('@')
+            .map(|(n, s)| (n.to_string(), s.parse::<f32>().ok()))
+    }) else {
+        return;
+    };
+    if !*done && at.is_some_and(|at| time.elapsed_secs() >= at) {
+        *done = true;
+        for mut avatar in &mut avatars {
+            avatar.look.hair = Some(name.clone());
         }
     }
 }

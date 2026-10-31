@@ -58,10 +58,17 @@ impl Plugin for AvatarPropsPlugin {
     }
 }
 
-/// Product of the local scales from `entity` up to the root.
-fn world_scale(mut entity: Entity, transforms: &Query<(&Transform, Option<&ChildOf>)>) -> f32 {
+/// Product of the local scales from `entity` up to, but not including, `root` (the body): the scale
+/// the skeleton carries. What the game puts above the body (it scales the whole avatar) stays.
+fn world_scale(
+    mut entity: Entity,
+    root: Entity,
+    transforms: &Query<(&Transform, Option<&ChildOf>)>,
+) -> f32 {
     let mut scale = 1.0;
-    while let Ok((t, parent)) = transforms.get(entity) {
+    while entity != root
+        && let Ok((t, parent)) = transforms.get(entity)
+    {
         scale *= t.scale.x;
         match parent {
             Some(p) => entity = p.parent(),
@@ -139,7 +146,7 @@ fn sync_props(
                 grip.translation_cm,
                 grip.rotation,
                 prop,
-                world_scale(hand, &transforms),
+                world_scale(hand, body, &transforms),
             );
             commands.spawn((
                 HeldPropEntity { body },

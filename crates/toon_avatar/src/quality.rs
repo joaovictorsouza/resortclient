@@ -50,6 +50,13 @@ impl Quality {
 
     /// Size folder of the compressed textures.
     pub fn texture_size(self) -> u32 {
+        // Debug: `TOON_AVATAR_TEXTURE_SIZE=1024` forces a texture size (to reproduce a device's tier).
+        if let Some(size) = std::env::var("TOON_AVATAR_TEXTURE_SIZE")
+            .ok()
+            .and_then(|v| v.parse::<u32>().ok())
+        {
+            return size;
+        }
         match self {
             Quality::Low => 512,
             Quality::Mid => 1024,
