@@ -47,7 +47,9 @@ pub use material::{
 pub use merge::{MergeEnabled, MergePlugin};
 pub use props::{AvatarHolding, AvatarPropsPlugin, HeldProp, HeldPropEntity, prop_transform};
 pub use quality::{Quality, QualityRenderSettingsPlugin};
-pub use style::{SceneStyle, SceneStylePlugin, SceneToon, SceneToonMaterial, toon_from_standard};
+pub use style::{
+    NoSceneToon, SceneStyle, SceneStylePlugin, SceneToon, SceneToonMaterial, toon_from_standard,
+};
 
 use bevy::{app::PluginGroupBuilder, prelude::*};
 

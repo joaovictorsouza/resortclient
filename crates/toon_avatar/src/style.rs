@@ -31,6 +31,11 @@ pub struct SceneStyle {
     pub cartoon: bool,
 }
 
+/// Keeps a mesh out of the cartoon style: its material stays as it is. For things that are not part of the
+/// scene's look and whose material the game reads back by type (the build-mode ghost).
+#[derive(Component, Clone, Copy, Debug, Default)]
+pub struct NoSceneToon;
+
 /// Marks a scene mesh that is drawn with the toon material; keeps the material it had.
 #[derive(Component, Clone, Debug)]
 pub struct SceneToon {
@@ -149,7 +154,10 @@ fn apply_scene_style(
     mut toon_materials: ResMut<Assets<SceneToonMaterial>>,
     mut cache: ResMut<SceneToonCache>,
     mut ramp: ResMut<RampHandle>,
-    plain: Query<(Entity, &MeshMaterial3d<StandardMaterial>), Without<SceneToon>>,
+    plain: Query<
+        (Entity, &MeshMaterial3d<StandardMaterial>),
+        (Without<SceneToon>, Without<NoSceneToon>),
+    >,
     styled: Query<(Entity, &SceneToon)>,
     parents: Query<&ChildOf>,
     owners: Query<&OwnedBy>,
@@ -288,6 +296,30 @@ mod tests {
             });
         let entity = app.world_mut().spawn(MeshMaterial3d(handle.clone())).id();
         (entity, handle)
+    }
+
+    #[test]
+    fn a_mesh_marked_no_scene_toon_keeps_its_standard_material() {
+        let mut app = style_app();
+        let (plain, _) = spawn_scene_mesh(&mut app, Color::WHITE);
+        let (ghost, original) = spawn_scene_mesh(&mut app, Color::srgba(0.2, 0.8, 0.4, 0.5));
+        app.world_mut().entity_mut(ghost).insert(NoSceneToon);
+        app.world_mut().resource_mut::<SceneStyle>().cartoon = true;
+        app.update();
+        app.update();
+        let world = app.world();
+        assert!(
+            world.get::<SceneToon>(plain).is_some(),
+            "the scene is styled"
+        );
+        assert!(world.get::<SceneToon>(ghost).is_none());
+        assert_eq!(
+            world
+                .get::<MeshMaterial3d<StandardMaterial>>(ghost)
+                .map(|m| &m.0),
+            Some(&original),
+            "the ghost keeps the material the game reads"
+        );
     }
 
     #[test]

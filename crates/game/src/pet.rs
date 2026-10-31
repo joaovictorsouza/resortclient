@@ -139,15 +139,25 @@ fn apply_placed(
     mut commands: Commands,
     mut placed: MessageReader<NetPetPlacedEvent>,
     pets: Query<(Entity, &ServerPet)>,
+    net: Option<Res<NakamaResource>>,
 ) {
     for event in placed.read() {
         let pet = &event.0;
+        let mut known = false;
         for (entity, existing) in &pets {
             if existing.id == pet.id {
+                known = true;
                 commands.entity(entity).despawn();
             }
         }
         spawn_pet(&mut commands, pet);
+        // A new pet of mine left my inventory (the item messages that update it are not sent for pets).
+        if !known
+            && let Some(net) = &net
+            && net.local_user_id == pet.owner_id
+        {
+            net.handle.send_command(NakamaCommand::FetchInventory);
+        }
     }
 }
 
@@ -198,11 +208,16 @@ fn apply_removed(
     mut commands: Commands,
     mut removed: MessageReader<NetPetRemovedEvent>,
     pets: Query<(Entity, &ServerPet)>,
+    net: Option<Res<NakamaResource>>,
 ) {
     for event in removed.read() {
         for (entity, pet) in &pets {
             if pet.id == event.0.id {
                 commands.entity(entity).despawn();
+                // The pet went back to its owner's inventory.
+                if let Some(net) = &net {
+                    net.handle.send_command(NakamaCommand::FetchInventory);
+                }
             }
         }
     }

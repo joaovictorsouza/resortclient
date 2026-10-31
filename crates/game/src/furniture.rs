@@ -743,6 +743,9 @@ fn handle_ghost_preview(
 
         commands.spawn((
             GhostPreviewEntity,
+            // The ghost keeps its translucent unlit material: the toon style would swap it and the ghost
+            // query (which reads the standard material) would lose it, leaking a new ghost every frame.
+            toon_avatar::NoSceneToon,
             Mesh3d(meshes.add(Cuboid::from_size(size))),
             MeshMaterial3d(mat),
             Transform::from_translation(world_pos),
