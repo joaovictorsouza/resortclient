@@ -17,15 +17,37 @@ use std::path::{Path, PathBuf};
 use bevy::{asset::AssetPlugin, prelude::*};
 use toon_avatar::{
     Avatar, AvatarAnimationConfig, AvatarCatalog, AvatarFace, AvatarHolding, AvatarLook,
-    AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, DeviceTier, Expression, HeldProp,
-    LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, SceneStyle, Slot,
+    AvatarPose, AvatarWalkSpeed, BodyAnimations, BodyType, ColorGroup, DeviceTier, Expression,
+    HeldProp, LodFocus, MaterialDefs, MergeEnabled, QualityRenderSettingsPlugin, SceneStyle, Slot,
     TierPreference, ToonAvatarPlugins, ToonSettings, parse_clips, parse_grip,
 };
 
+/// `TOON_AVATAR_ASSETS`, else the first of these folders that holds `characters/`: `assets`, and the
+/// asset repository next to this one.
+///
+/// The path is made absolute: Bevy resolves a relative asset folder against the executable, not the
+/// working directory, which left the window empty.
 fn assets_dir() -> PathBuf {
-    std::env::var("TOON_AVATAR_ASSETS")
+    let absolute = |dir: PathBuf| std::fs::canonicalize(&dir).unwrap_or(dir);
+    if let Ok(dir) = std::env::var("TOON_AVATAR_ASSETS") {
+        return absolute(PathBuf::from(dir));
+    }
+    let candidates = [
+        "assets",
+        "../resort-game-assets/assets",
+        "../anime-character-bevy/assets",
+    ];
+    candidates
+        .iter()
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("assets"))
+        .find(|dir| dir.join("characters/items/outfits.json").is_file())
+        .map(absolute)
+        .unwrap_or_else(|| {
+            panic!(
+                "no character assets found: set TOON_AVATAR_ASSETS to a folder holding characters/ \
+                 (for example ../resort-game-assets/assets); looked in {candidates:?}"
+            )
+        })
 }
 
 fn read(dir: &Path, rel: &str) -> Option<String> {
@@ -79,10 +101,27 @@ fn starting_look(catalog: &AvatarCatalog) -> AvatarLook {
     let hair_name = std::env::var("TOON_DEMO_HAIR").unwrap_or_else(|_| "Hairstyle.06".into());
     let c = catalog.of(body);
     let first = |slot: Slot| c.slot(slot).first().map(|e| e.name.clone());
+    let mut group_colors = std::collections::BTreeMap::new();
+    // `TOON_DEMO_DEBUG_COLORS=1` paints the skin blue and the underwear green: shows which region of
+    // the body mask each part of the body uses.
+    if std::env::var("TOON_DEMO_DEBUG_COLORS").is_ok() {
+        group_colors.insert(
+            ColorGroup::Skin,
+            vec![Some([0.0, 0.2, 1.0]), Some([0.0, 0.2, 1.0])],
+        );
+        group_colors.insert(
+            ColorGroup::Underwear,
+            vec![Some([0.0, 1.0, 0.0]), Some([0.0, 1.0, 0.0])],
+        );
+    }
     AvatarLook {
+        group_colors,
         body,
         face: first(Slot::Face),
-        top: first(Slot::Top),
+        top: std::env::var("TOON_DEMO_TOP")
+            .ok()
+            .filter(|n| c.top.iter().any(|e| &e.name == n))
+            .or_else(|| first(Slot::Top)),
         bottom: first(Slot::Bottom),
         hair: c
             .hair

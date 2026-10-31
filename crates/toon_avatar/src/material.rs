@@ -272,7 +272,13 @@ pub(crate) fn toon_params(
         },
     };
     for slot in 0..COLOR_SLOTS {
-        if let Some(c) = look.color_of(name, item_slot, slot) {
+        let color = look.color_of(name, item_slot, slot).or_else(|| {
+            male_underwear_follows_skin(look, name, item_slot, slot, |s| {
+                let c = [def.a1, def.a2][s];
+                Some([c[0], c[1], c[2]])
+            })
+        });
+        if let Some(c) = color {
             set_slot(&mut params, slot, c);
         }
     }
@@ -388,6 +394,11 @@ fn apply_look_colors(
                 let color = avatar
                     .look
                     .color_of(name, *item_slot, slot)
+                    .or_else(|| {
+                        male_underwear_follows_skin(&avatar.look, name, *item_slot, slot, |s| {
+                            defs.color(name, s)
+                        })
+                    })
                     .or_else(|| defs.color(name, slot));
                 if let Some(c) = color {
                     set_slot(&mut mat.params, slot, c);
@@ -395,6 +406,23 @@ fn apply_look_colors(
             }
         }
     }
+}
+
+/// The male body mask has a few skin pixels (one hand, the toes) in its underwear region (slots B1,
+/// B2), which the authored colours paint red. Unless the look sets the underwear, that region takes
+/// the colour of the skin slot (A1, A2) instead.
+fn male_underwear_follows_skin(
+    look: &AvatarLook,
+    material: &str,
+    item_slot: Option<Slot>,
+    slot: usize,
+    authored: impl Fn(usize) -> Option<[f32; 3]>,
+) -> Option<[f32; 3]> {
+    if !material.starts_with("mat_body_M") || !(2..4).contains(&slot) {
+        return None;
+    }
+    look.color_of(material, item_slot, slot - 2)
+        .or_else(|| authored(slot - 2))
 }
 
 /// Applies the outline setting (and the level of detail's permission) to every body material.
@@ -435,5 +463,35 @@ fn item_slot_of(
             return Some(a.slot);
         }
         entity = parents.get(entity).ok()?.parent();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::catalog::ColorGroup;
+
+    #[test]
+    fn the_male_underwear_slots_follow_the_skin_slots() {
+        let mut look = AvatarLook::default();
+        look.group_colors.insert(
+            ColorGroup::Skin,
+            vec![Some([0.1, 0.2, 0.3]), Some([0.4, 0.5, 0.6])],
+        );
+        let authored = |s: usize| Some([s as f32; 3]);
+        let follow =
+            |name: &str, slot| male_underwear_follows_skin(&look, name, None, slot, authored);
+        assert_eq!(follow("mat_body_M", 2), Some([0.1, 0.2, 0.3]));
+        assert_eq!(follow("mat_body_M", 3), Some([0.4, 0.5, 0.6]));
+        // The female body, the skin slots and other materials are left alone.
+        assert_eq!(follow("mat_body_F", 2), None);
+        assert_eq!(follow("mat_body_M", 1), None);
+        assert_eq!(follow("mat_top.001_shirt", 2), None);
+        // Without a skin choice the authored skin colours are used.
+        let plain = AvatarLook::default();
+        assert_eq!(
+            male_underwear_follows_skin(&plain, "mat_body_M", None, 2, authored),
+            Some([0.0; 3])
+        );
     }
 }
