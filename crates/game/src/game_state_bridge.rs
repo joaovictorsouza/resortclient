@@ -10,11 +10,12 @@
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
 
-use crate::furniture::BuildModeState;
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
+use crate::furniture::BuildModeState;
 use crate::navigator::ActiveRoomMetadata;
 use crate::room::ActiveRoom;
 use crate::state::AppState;
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use bevy_kmp_ffi::bevy_kmp::{HostLifecycle, Outbox};
 use serde::Serialize;
@@ -100,18 +101,29 @@ impl Plugin for GameStateBridgePlugin {
     }
 }
 
+#[derive(SystemParam)]
+struct SnapshotSources<'w> {
+    state: Res<'w, State<AppState>>,
+    status: Res<'w, ConnectionStatus>,
+    room: Res<'w, ActiveRoom>,
+    meta: Res<'w, ActiveRoomMetadata>,
+    build: Res<'w, BuildModeState>,
+}
+
 fn publish_game_state(
-    state: Res<State<AppState>>,
-    status: Res<ConnectionStatus>,
-    room: Res<ActiveRoom>,
-    meta: Res<ActiveRoomMetadata>,
-    build: Res<BuildModeState>,
+    src: SnapshotSources,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<GameStateSnapshot>>,
 ) {
     let resumed = lifecycle.read().any(|m| *m == HostLifecycle::Resumed);
-    let snap = snapshot(*state.get(), &status, &room, &meta, &build);
+    let snap = snapshot(
+        *src.state.get(),
+        &src.status,
+        &src.room,
+        &src.meta,
+        &src.build,
+    );
     if resumed || last.as_ref() != Some(&snap) {
         if let Ok(payload) = serde_json::to_vec(&snap) {
             outbox.send_app(EVT_GAME_STATE, payload);
