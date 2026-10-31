@@ -258,3 +258,12 @@ Dependências: F0 antes de tudo; F1 depois de F0; F2, F3 e F4 sobre a F1 (F3 ant
 ## 16. Fora do escopo
 
 Implementação de qualquer fase, mudanças no jogo, no servidor, nos assets publicados, no protótipo ou no pacote Rukha93, e licenciamento dos pacotes de terceiros (ignorado por ora).
+
+## 17. Limpeza de compatibilidade (pendente)
+
+Decisão de 31/10/2026: **não existe versão antiga publicada do app**, então a compatibilidade com o pacote antigo não tem uso e deve ser removida. Remover, nesta ordem, antes da primeira publicação:
+
+- **Assets (`resort-game-assets`)**: `characters/base/`, `characters/parts/`, `characters/palette.png`, `characters/catalog.json` e `characters/animations/{clips.json,character_anims.glb}` da raiz (os de `F/` e `M/` ficam); entradas correspondentes em `CORE_PREFIXES` e `TTL_DAYS_BY_PREFIX` de `build_manifest.py`; rodar `publish-assets.sh dev --apply --prune` para apagar da CDN o que o manifest não cita mais.
+- **Cliente**: o fallback `characters/cosmetics_v3.json` pode virar o único catálogo de primeiro uso; remover o código que lê o formato antigo de aparência (`skin_color`, `hair_color`, `accessories`) e os testes dele.
+- **Servidor**: a sanitização de aparência salva antes da v2 (`Catalog.Sanitize`, ramo "aparência anterior à versão 2") e os campos legados do contrato e de `protocol.md`; depois, subir o contrato para a próxima versão e sincronizar o cliente.
+- **Manifest**: regra do `AGENTS.md` do repositório de assets ("expanda antes de contrair") deixa de valer até a primeira publicação; reescrever a regra quando houver app publicado.
