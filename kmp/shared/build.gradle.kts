@@ -8,6 +8,7 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.atomicfu)
+    alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.gobley.cargo)
     alias(libs.plugins.gobley.uniffi)
 }
@@ -55,6 +56,12 @@ kotlin {
             implementation(compose.material3)
             implementation(compose.ui)
             implementation(libs.coroutines.core)
+            implementation(libs.androidx.lifecycle.viewmodel.compose)
+            implementation(libs.serialization.json)
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.coroutines.test)
         }
         androidMain.dependencies {
             implementation("androidx.credentials:credentials:1.3.0")

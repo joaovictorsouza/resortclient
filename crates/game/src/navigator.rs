@@ -67,6 +67,28 @@ pub struct DoorbellState {
     pub waiting_message: Option<String>,
 }
 
+/// Who owns the room being entered, as seen by `local_user_id` (the Nakama user id). Returns
+/// `(owner_id, is_owner)`; it never depends on the previously active room.
+///
+/// The server sends the owner in the room snapshot (`snapshot_owner_id`, `""` = no owner, protocol 2.0),
+/// and that is authoritative. The room lists are only a fallback for a snapshot that carries no
+/// owner id (an empty one on a room that is listed as mine), and the public rooms never have an owner.
+pub fn resolve_ownership(
+    room_id: &str,
+    snapshot_owner_id: &str,
+    local_user_id: &str,
+    my_rooms: &[RoomSummaryDto],
+) -> (Option<String>, bool) {
+    if room_id == "lobby" || room_id == "cafe" {
+        return (None, false);
+    }
+    if !snapshot_owner_id.is_empty() {
+        let mine = !local_user_id.is_empty() && snapshot_owner_id == local_user_id;
+        return (Some(snapshot_owner_id.to_string()), mine);
+    }
+    (None, my_rooms.iter().any(|r| r.room_id == room_id))
+}
+
 #[derive(Resource, Default, Debug)]
 pub struct ActiveRoomMetadata {
     pub room_id: String,
@@ -1146,5 +1168,57 @@ mod tests {
         assert_eq!(focus_edit.0, FocusedInput::SettingsRoomName);
         focus_edit.0 = FocusedInput::None;
         assert_eq!(focus_edit.0, FocusedInput::None);
+    }
+
+    fn summary(id: &str) -> RoomSummaryDto {
+        RoomSummaryDto {
+            room_id: id.into(),
+            name: id.into(),
+            owner_id: None,
+            owner_name: None,
+            visibility: "public".into(),
+            user_count: 0,
+            max_users: 10,
+            match_id: None,
+        }
+    }
+
+    #[test]
+    fn public_rooms_have_no_owner() {
+        assert_eq!(resolve_ownership("lobby", "", "me", &[]), (None, false));
+        assert_eq!(resolve_ownership("cafe", "", "me", &[]), (None, false));
+    }
+
+    #[test]
+    fn the_snapshot_owner_decides_when_it_matches_my_user_id() {
+        assert_eq!(
+            resolve_ownership("r1", "me", "me", &[]),
+            (Some("me".to_string()), true)
+        );
+    }
+
+    #[test]
+    fn someone_elses_room_is_not_mine_even_if_it_is_in_my_rooms() {
+        // The snapshot wins over the lists.
+        let mine = [summary("r2")];
+        assert_eq!(
+            resolve_ownership("r2", "alice", "me", &mine),
+            (Some("alice".to_string()), false)
+        );
+    }
+
+    #[test]
+    fn an_empty_snapshot_owner_falls_back_to_my_rooms() {
+        let mine = [summary("r3")];
+        assert_eq!(resolve_ownership("r3", "", "me", &mine), (None, true));
+        assert_eq!(resolve_ownership("r4", "", "me", &mine), (None, false));
+    }
+
+    #[test]
+    fn an_empty_local_user_id_never_matches() {
+        assert_eq!(
+            resolve_ownership("r1", "someone", "", &[]),
+            (Some("someone".to_string()), false)
+        );
     }
 }

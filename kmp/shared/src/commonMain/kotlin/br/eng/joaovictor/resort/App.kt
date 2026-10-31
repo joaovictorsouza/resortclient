@@ -11,6 +11,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
+import br.eng.joaovictor.resort.game.GameHost
 
 /**
  * The whole screen is the Bevy view: the game's UI is still bevy_hui. Native screens (the

@@ -26,26 +26,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import br.eng.joaovictor.resort.game.BevyJson
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /** What the game mirrors for the Compose HUD test (`hud_state`). */
+@Serializable
 data class HudState(
     val name: String = "",
     val silver: Long = 0,
     val gold: Long = 0,
-    val inRoom: Boolean = false,
+    @SerialName("in_room") val inRoom: Boolean = false,
     val reconnecting: Boolean = false,
 )
 
-fun parseHud(json: String): HudState {
-    val m = parseFlatJson(json)
-    return HudState(
-        name = m["name"] as? String ?: "",
-        silver = (m["silver"] as? Double)?.toLong() ?: 0,
-        gold = (m["gold"] as? Double)?.toLong() ?: 0,
-        inRoom = m["in_room"] as? Boolean ?: false,
-        reconnecting = m["reconnecting"] as? Boolean ?: false,
-    )
-}
+fun parseHud(json: String): HudState? = BevyJson.decodeOrNull<HudState>(json)
 
 /**
  * Feasibility test: a translucent bar, a [AlertDialog] and a [ModalBottomSheet] over the 3D scene,

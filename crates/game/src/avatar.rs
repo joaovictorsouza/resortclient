@@ -901,6 +901,7 @@ mod tests {
         NetRoomSnapshotEvent(RoomSnapshot {
             room_id: "r".into(),
             room_name: "r".into(),
+            owner_id: String::new(),
             layout: LayoutSnapshot {
                 id: "l".into(),
                 width: 8,

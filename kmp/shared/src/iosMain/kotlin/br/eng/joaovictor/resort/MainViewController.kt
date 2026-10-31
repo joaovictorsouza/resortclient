@@ -1,6 +1,9 @@
 package br.eng.joaovictor.resort
 
 import androidx.compose.ui.window.ComposeUIViewController
+import br.eng.joaovictor.resort.game.GameHost
+import br.eng.joaovictor.resort.game.HostPaths
+import br.eng.joaovictor.resort.game.parseEnv
 import platform.Foundation.NSBundle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSProcessInfo

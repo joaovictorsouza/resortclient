@@ -148,6 +148,7 @@ mod tests {
         let raw = r#"{
             "room_id": "lobby",
             "room_name": "Central Plaza",
+            "owner_id": "",
             "layout": {
                 "id": "lobby_12x10",
                 "width": 12,
@@ -338,6 +339,20 @@ mod tests {
         assert!(same.unchanged);
         assert!(same.furniture.is_empty() && same.cosmetics.is_none() && same.shop.is_none());
         assert_eq!(same.catalog_version, full.catalog_version);
+    }
+
+    #[test]
+    fn test_decode_room_snapshot_sample_with_owner_id() {
+        let raw = include_str!("../../../contract/fixtures/room_snapshot.json");
+        let snap: RoomSnapshot = serde_json::from_str(raw).unwrap();
+        assert_eq!(snap.owner_id, "99a9a0e6-8152-4414-b657-3fbb1c77174e");
+        assert_eq!(snap.avatars.len(), 1);
+    }
+
+    #[test]
+    fn a_room_snapshot_without_owner_id_is_rejected_since_protocol_2() {
+        let raw = r#"{"room_id":"r","room_name":"r","layout":{"id":"l","width":1,"height":1,"door":[0,0],"heightmap":[]},"avatars":[]}"#;
+        assert!(serde_json::from_str::<RoomSnapshot>(raw).is_err());
     }
 
     #[test]

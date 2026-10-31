@@ -133,6 +133,8 @@ pub struct PlacedItemSnapshot {
 pub struct RoomSnapshot {
     pub room_id: String,
     pub room_name: String,
+    /// The owner's user id, or `""` for rooms without an owner (lobby, cafe). Required since protocol 2.0.
+    pub owner_id: String,
     pub layout: LayoutSnapshot,
     pub avatars: Vec<AvatarSnapshot>,
     #[serde(default)]

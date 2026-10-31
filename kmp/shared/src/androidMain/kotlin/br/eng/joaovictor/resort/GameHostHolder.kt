@@ -3,6 +3,9 @@ package br.eng.joaovictor.resort
 import android.content.Context
 import android.util.Log
 import br.eng.joaovictor.bevykmp.NativeBridge
+import br.eng.joaovictor.resort.game.GameHost
+import br.eng.joaovictor.resort.game.HostPaths
+import br.eng.joaovictor.resort.game.parseEnv
 import java.io.File
 
 /** Process-wide holder: the Bevy app outlives Activity recreation. */

@@ -1,4 +1,4 @@
-package br.eng.joaovictor.resort
+package br.eng.joaovictor.resort.game
 
 import br.eng.joaovictor.resort.ffi.BevyBackendKind
 import br.eng.joaovictor.resort.ffi.BevyConfig
@@ -11,13 +11,27 @@ import br.eng.joaovictor.resort.ffi.bevyKmpRespondService
 import br.eng.joaovictor.bevykmp.BevyBackend
 import br.eng.joaovictor.bevykmp.BevyInsets
 import br.eng.joaovictor.bevykmp.PointerPhase
+import br.eng.joaovictor.resort.GoogleAuth
+import br.eng.joaovictor.resort.GoogleResult
+import br.eng.joaovictor.resort.HudState
+import br.eng.joaovictor.resort.NoGoogleAuth
+import br.eng.joaovictor.resort.NicknameMessage
+import br.eng.joaovictor.resort.OnboardingStage
+import br.eng.joaovictor.resort.parseHud
+import br.eng.joaovictor.resort.parseStage
+import br.eng.joaovictor.resort.platformLog
+import br.eng.joaovictor.resort.writeFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.concurrent.Volatile
 
 /** Adapts the UniFFI-generated [BevyHost] to bevy-kmp's hot-path [BevyBackend]. */
 class UniffiBackend(private val host: BevyHost) : BevyBackend {
@@ -95,8 +109,8 @@ class GameHost(
     private val _fps = MutableStateFlow(0f)
     val fps: StateFlow<Float> = _fps.asStateFlow()
 
-    @kotlin.concurrent.Volatile private var rssMb = 0L
-    @kotlin.concurrent.Volatile private var gpuName = ""
+    @Volatile private var rssMb = 0L
+    @Volatile private var gpuName = ""
     private val statusDir = config.dataDir
 
     /** Diagnostics for measurements and test scripts: `Documents/status.txt`, once per second. No secrets. */
@@ -106,6 +120,15 @@ class GameHost(
     }
 
     private lateinit var hostRef: BevyHost
+
+    // Every `HostEvent::App` the game publishes, for the repositories (see `GameGateway`). `tryEmit` never
+    // blocks the Bevy render thread; declared before `listener` because events can arrive while the
+    // `BevyHost` is still being constructed.
+    private val _events = MutableSharedFlow<BevyEvent>(extraBufferCapacity = 64)
+    val events: SharedFlow<BevyEvent> = _events.asSharedFlow()
+
+    /** Sends a named JSON message to the game (`HostMessage` on the Bevy side). */
+    fun send(name: String, json: String = "") = host.sendMessage(name, json.encodeToByteArray())
 
     private val listener = object : BevyEventListener {
         // Called from the Bevy render thread.
@@ -118,9 +141,12 @@ class GameHost(
                 }
                 is BevyEvent.Memory -> rssMb = (event.rssBytes / 1048576u).toLong()
                 is BevyEvent.Gpu -> gpuName = event.name
-                is BevyEvent.App -> when (event.name) {
-                    "onboarding_stage" -> _stage.value = parseStage(event.payload.decodeToString())
-                    "hud_state" -> _hud.value = parseHud(event.payload.decodeToString())
+                is BevyEvent.App -> {
+                    _events.tryEmit(event)
+                    when (event.name) {
+                        "onboarding_stage" -> parseStage(event.payload.decodeToString())?.let { _stage.value = it }
+                        "hud_state" -> parseHud(event.payload.decodeToString())?.let { _hud.value = it }
+                    }
                 }
                 is BevyEvent.ServiceRequest -> handleService(event)
                 is BevyEvent.Log -> platformLog(event.level.name, event.target, event.text)
@@ -196,7 +222,7 @@ class GameHost(
 
     fun onboardingNickname(nickname: String) = host.sendMessage(
         "onboarding_nickname",
-        """{"nickname":"$nickname"}""".encodeToByteArray(),
+        BevyJson.encode(NicknameMessage(nickname)).encodeToByteArray(),
     )
 }
 
@@ -209,7 +235,3 @@ fun parseEnv(content: String): Map<String, String> = content.lineSequence()
     .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains('=') }
     .associate { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
     .filterKeys { it.isNotEmpty() }
-
-internal expect fun writeFile(dir: String, name: String, bytes: ByteArray)
-
-internal expect fun platformLog(level: String, target: String, text: String)

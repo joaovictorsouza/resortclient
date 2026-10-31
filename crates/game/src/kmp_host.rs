@@ -42,7 +42,11 @@ pub fn build_app(app: &mut App, config: &HostConfig) {
     // The native shell draws the login and nickname screens (see `onboarding`).
     app.add_plugins((GamePlugin, crate::onboarding::OnboardingPlugin));
     if crate::hud_bridge::enabled(&config.env) {
-        app.add_plugins(crate::hud_bridge::HudBridgePlugin);
+        app.add_plugins((
+            crate::hud_bridge::HudBridgePlugin,
+            crate::wallet_bridge::WalletBridgePlugin,
+            crate::game_state_bridge::GameStateBridgePlugin,
+        ));
     }
 }
 

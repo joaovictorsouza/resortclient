@@ -16,6 +16,8 @@ pub mod config;
 pub mod connection;
 pub mod furniture;
 pub mod game_log;
+#[cfg(feature = "kmp-host")]
+pub mod game_state_bridge;
 pub mod google_signin;
 pub mod gpu_compat;
 #[cfg(feature = "kmp-host")]
@@ -45,6 +47,8 @@ pub mod status_panel;
 pub mod touch_scroll;
 pub mod ui_scale;
 pub mod wallet;
+#[cfg(feature = "kmp-host")]
+pub mod wallet_bridge;
 
 use avian3d::prelude::*;
 #[cfg(feature = "winit-host")]

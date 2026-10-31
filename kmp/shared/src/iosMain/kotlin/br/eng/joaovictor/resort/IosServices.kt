@@ -2,6 +2,7 @@
 
 package br.eng.joaovictor.resort
 
+import br.eng.joaovictor.resort.game.NativeServices
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc

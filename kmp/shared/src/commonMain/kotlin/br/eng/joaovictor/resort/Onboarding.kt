@@ -24,10 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import br.eng.joaovictor.resort.game.BevyJson
+import kotlinx.serialization.Serializable
 
 private const val NICKNAME_MAX_LEN = 16
 
 /** What the game reports about the onboarding (`onboarding_stage`). */
+@Serializable
 data class OnboardingStage(
     val stage: String = "loading",
     val busy: Boolean = false,
@@ -42,68 +45,12 @@ data class OnboardingStage(
 fun sanitizeNickname(input: String): String =
     input.filter { it.isLetterOrDigit() && it.code < 128 || it == '_' }.take(NICKNAME_MAX_LEN)
 
-/** Parses the flat JSON object the game sends (strings, booleans, null). */
-fun parseStage(json: String): OnboardingStage {
-    val map = parseFlatJson(json)
-    return OnboardingStage(
-        stage = map["stage"] as? String ?: "loading",
-        busy = map["busy"] as? Boolean ?: false,
-        error = map["error"] as? String,
-        dev = map["dev"] as? Boolean ?: false,
-    )
-}
+/** Parses `onboarding_stage`; a payload that is not a JSON object gives `null` (the caller keeps the last stage). */
+fun parseStage(json: String): OnboardingStage? = BevyJson.decodeOrNull<OnboardingStage>(json)
 
-internal fun parseFlatJson(json: String): Map<String, Any?> {
-    val out = mutableMapOf<String, Any?>()
-    var i = 0
-    fun skipWs() { while (i < json.length && json[i].isWhitespace()) i++ }
-    fun string(): String {
-        val sb = StringBuilder()
-        i++ // opening quote
-        while (i < json.length && json[i] != '"') {
-            if (json[i] == '\\' && i + 1 < json.length) {
-                i++
-                when (json[i]) {
-                    'n' -> sb.append('\n')
-                    't' -> sb.append('\t')
-                    'u' -> {
-                        sb.append(json.substring(i + 1, i + 5).toInt(16).toChar())
-                        i += 4
-                    }
-                    else -> sb.append(json[i])
-                }
-            } else {
-                sb.append(json[i])
-            }
-            i++
-        }
-        i++ // closing quote
-        return sb.toString()
-    }
-    skipWs()
-    if (i < json.length && json[i] == '{') i++
-    while (true) {
-        skipWs()
-        if (i >= json.length || json[i] == '}') break
-        if (json[i] == ',') { i++; continue }
-        val key = string()
-        skipWs()
-        i++ // colon
-        skipWs()
-        out[key] = when {
-            json[i] == '"' -> string()
-            json.startsWith("true", i) -> { i += 4; true }
-            json.startsWith("false", i) -> { i += 5; false }
-            json.startsWith("null", i) -> { i += 4; null }
-            else -> {
-                val start = i
-                while (i < json.length && json[i] != ',' && json[i] != '}') i++
-                json.substring(start, i).trim().toDoubleOrNull()
-            }
-        }
-    }
-    return out
-}
+/** Command payload of `onboarding_nickname`. */
+@Serializable
+data class NicknameMessage(val nickname: String)
 
 /**
  * Native login and nickname screens, drawn above the game while it is in those states. The game

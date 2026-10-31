@@ -271,16 +271,25 @@ fn poll_nakama_events(
                     active_meta.room_id = snap.room_id.clone();
                     active_meta.room_name = snap.room_name.clone();
 
+                    // Always recomputed for the room being entered, never inherited from the previous one.
+                    let (owner_id, is_owner) = crate::navigator::resolve_ownership(
+                        &snap.room_id,
+                        &snap.owner_id,
+                        &net.local_user_id,
+                        &nav_state.my_rooms,
+                    );
+                    active_meta.owner_id = owner_id;
+                    active_meta.is_owner = is_owner;
                     if snap.room_id == "lobby" || snap.room_id == "cafe" {
-                        active_meta.is_owner = false;
                         active_meta.visibility = "public".to_string();
-                    } else if let Some(mine) = nav_state
+                    } else if let Some(listed) = nav_state
                         .my_rooms
                         .iter()
+                        .chain(nav_state.popular_rooms.iter())
+                        .chain(nav_state.search_results.iter())
                         .find(|r| r.room_id == snap.room_id)
                     {
-                        active_meta.is_owner = true;
-                        active_meta.visibility = mine.visibility.clone();
+                        active_meta.visibility = listed.visibility.clone();
                     }
 
                     snapshot_events.write(NetRoomSnapshotEvent(snap));
@@ -313,6 +322,7 @@ fn poll_nakama_events(
                         closed.reason
                     );
                     active_meta.is_owner = false;
+                    active_meta.owner_id = None;
                     active_meta.visibility = "public".to_string();
                     net.handle.send_command(NakamaCommand::RequestJoinRoom {
                         room_id: "lobby".to_string(),
@@ -399,6 +409,10 @@ fn poll_nakama_events(
                 for r in &rooms {
                     if r.room_id == active_meta.room_id {
                         active_meta.is_owner = true;
+                        active_meta.owner_id = r
+                            .owner_id
+                            .clone()
+                            .or_else(|| Some(net.local_user_id.clone()));
                         active_meta.visibility = r.visibility.clone();
                     }
                 }
@@ -415,6 +429,19 @@ fn poll_nakama_events(
                     created.name, created.room_id
                 );
                 active_meta.is_owner = true;
+                active_meta.owner_id = Some(net.local_user_id.clone());
+                // Known as mine from now on, so the snapshot of the new room resolves to "mine" even
+                // before `MyRoomsLoaded` arrives.
+                nav_state.my_rooms.push(protocol::RoomSummaryDto {
+                    room_id: created.room_id.clone(),
+                    name: created.name.clone(),
+                    owner_id: Some(net.local_user_id.clone()),
+                    owner_name: None,
+                    visibility: created.visibility.clone(),
+                    user_count: 0,
+                    max_users: created.max_users,
+                    match_id: None,
+                });
                 active_meta.room_id = created.room_id.clone();
                 active_meta.room_name = created.name.clone();
                 active_meta.visibility = created.visibility.clone();
@@ -430,6 +457,7 @@ fn poll_nakama_events(
             NakamaEvent::RoomDeleted => {
                 info!("Room deleted successfully, redirecting to lobby");
                 active_meta.is_owner = false;
+                active_meta.owner_id = None;
                 active_meta.visibility = "public".to_string();
                 net.handle.send_command(NakamaCommand::RequestJoinRoom {
                     room_id: "lobby".to_string(),
