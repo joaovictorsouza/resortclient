@@ -4,6 +4,8 @@ members = [
     "crates/protocol",
     "crates/nakama_client",
     "crates/game",
+    "crates/toon_avatar",
+    "crates/toon_avatar_demo",
 ]
 
 [workspace.package]

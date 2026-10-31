@@ -729,7 +729,7 @@ mod tests {
     fn returning_account_with_a_server_appearance_skips_the_creator() {
         let (mut config, dir) = config_with_profile_dir();
         let custom = protocol::AvatarAppearance {
-            skin_color: "#123456".into(),
+            hair_id: "Hairstyle.01".into(),
             ..protocol::AvatarAppearance::default()
         };
         let next = apply_account_check(&account_with(Some(custom.clone())), &mut config);

@@ -1,21 +1,17 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use avian3d::prelude::*;
-use bevy::ecs::world::EntityWorldMut;
 use bevy::prelude::*;
 use protocol::{AvatarAppearance, AvatarAppearanceUpdated, Posture};
 
-use crate::appearance::resolve_part_id;
-use crate::avatar_anim::{
-    AvatarBodyPart, AvatarClothingPart, AvatarPose, AvatarPosture, HiddenUntilPosed,
-};
-use crate::character_creator::CharacterCatalog;
-use crate::furniture::parse_hex_color;
+use crate::avatar_anim::{AvatarPose, AvatarPosture};
 use crate::net::{
-    NakamaResource, NetAvatarAppearanceUpdatedEvent, NetAvatarJoinedEvent, NetAvatarLeftEvent,
-    NetAvatarPathEvent, NetAvatarPostureChangedEvent, NetRoomSnapshotEvent,
+    NakamaResource, NetAvatarActionEvent, NetAvatarAppearanceUpdatedEvent,
+    NetAvatarExpressionChangedEvent, NetAvatarHoldingChangedEvent, NetAvatarJoinedEvent,
+    NetAvatarLeftEvent, NetAvatarPathEvent, NetAvatarPostureChangedEvent, NetRoomSnapshotEvent,
 };
 use crate::room::tile_to_world;
+use crate::toon::look_from_appearance;
 
 #[derive(Component, Debug)]
 pub struct Avatar {
@@ -46,12 +42,11 @@ pub struct PendingPosture {
     pub applied: bool,
 }
 
-/// Distance from the avatar origin to the middle of the body in the `lay` pose, along
-/// the facing direction (the head points away from it). Printed by
-/// `tools/asset_pipeline/build_animations.py` ("body middle along Z"): the body spans
-/// -1.03..0.88 glTF units around the pelvis (head towards -Z), i.e. its middle is 0.0766
-/// units (0.075 tiles) towards the head.
-pub const LAY_CENTER_OFFSET: f32 = 0.075;
+/// Distance from the avatar origin to the middle of the body in the `lay` pose, along the facing
+/// direction. Printed by `crates/toon_avatar/tools/animations/build_cc_animations.py` ("body middle
+/// along Z"): the body's bounding box is centred 0.33 world units towards the feet from the pelvis
+/// (the head points to -Z in the model), so the origin must sit that far towards the head.
+pub const LAY_CENTER_OFFSET: f32 = -0.33;
 /// Speed (tiles/s) at which an avatar slides from its tile center to its resting spot.
 const REST_SLIDE_SPEED: f32 = 1.5;
 
@@ -89,9 +84,9 @@ pub fn facing_rotation(rotation: i32) -> Quat {
     Quat::from_rotation_y(theta + std::f32::consts::PI)
 }
 
-/// Height of the pack body (`Body_010`) in glTF units, i.e. metres (`MODEL_HEIGHT` in
-/// `tools/asset_pipeline/anim_config.py`).
-pub const AVATAR_MODEL_HEIGHT: f32 = 1.83;
+/// Height of the character model in metres (`model_height_m` of `clips.json`, measured by
+/// `build_cc_animations.py`).
+pub const AVATAR_MODEL_HEIGHT: f32 = 1.596;
 /// Target avatar height in world units (matches `Collider::capsule(0.3, 1.2)`: 1.2 + 2 * 0.3).
 pub const AVATAR_TARGET_HEIGHT: f32 = 1.8;
 /// Uniform scale applied to the glTF avatar scenes so they match the room's tile scale.
@@ -118,6 +113,7 @@ impl Plugin for AvatarPlugin {
                 )
                     .chain(),
                 handle_avatar_appearance_updated,
+                handle_avatar_emotes,
                 handle_avatar_left,
                 handle_avatar_path,
                 handle_avatar_posture_changed,
@@ -125,69 +121,7 @@ impl Plugin for AvatarPlugin {
                 apply_pending_postures.after(move_avatars_along_path),
             ),
         );
-        ensure_tint_plugin(app);
     }
-}
-
-/// Adds [`AvatarTintPlugin`] unless it is already there. Both [`AvatarPlugin`] and the
-/// character creator need it and either may be added first; adding a plugin twice panics.
-pub fn ensure_tint_plugin(app: &mut App) {
-    if !app.is_plugin_added::<AvatarTintPlugin>() {
-        app.add_plugins(AvatarTintPlugin);
-    }
-}
-
-/// Paints the avatar parts that carry an [`AvatarPartTint`]. Separate from [`AvatarPlugin`]
-/// because the character creator spawns avatars without the networking half.
-pub struct AvatarTintPlugin;
-
-impl Plugin for AvatarTintPlugin {
-    fn build(&self, app: &mut App) {
-        app.init_resource::<RetainedParts>()
-            .add_systems(Update, (apply_part_tints, retain_part_scenes));
-    }
-}
-
-/// Keeps every part scene that was ever shown loaded. Without it, dropping a part (the player tries
-/// another hat) unloads its glTF and picking it again parses the file once more, which takes seconds on
-/// a phone. There are a few dozen small parts, so keeping them costs little.
-#[derive(Resource, Default)]
-struct RetainedParts(HashMap<bevy::asset::UntypedAssetId, bevy::asset::UntypedHandle>);
-
-fn retain_part_scenes(
-    mut retained: ResMut<RetainedParts>,
-    parts: Query<&WorldAssetRoot, Added<WorldAssetRoot>>,
-) {
-    for root in &parts {
-        retained
-            .0
-            .entry(root.0.id().untyped())
-            .or_insert_with(|| root.0.clone().untyped());
-    }
-}
-
-/// The color the player picked for a slot, when the slot is painted.
-pub fn slot_color(appearance: &AvatarAppearance, slot: &str) -> Option<Color> {
-    let hex = match slot {
-        "body" => &appearance.skin_color,
-        "hair" => &appearance.hair_color,
-        "top" => &appearance.top_color,
-        "bottom" => &appearance.bottom_color,
-        "shoes" => &appearance.shoes_color,
-        _ => return None,
-    };
-    Some(parse_hex_color(hex))
-}
-
-/// True when two appearances use the same parts and differ at most in colors: the avatar can be
-/// repainted in place instead of being rebuilt.
-pub fn same_parts(a: &AvatarAppearance, b: &AvatarAppearance) -> bool {
-    a.face_id == b.face_id
-        && a.hair_id == b.hair_id
-        && a.top_id == b.top_id
-        && a.bottom_id == b.bottom_id
-        && a.shoes_id == b.shoes_id
-        && a.accessories == b.accessories
 }
 
 struct AvatarSpawnData<'a> {
@@ -197,6 +131,8 @@ struct AvatarSpawnData<'a> {
     z: i32,
     is_local: bool,
     appearance: AvatarAppearance,
+    expression: &'a str,
+    holding: &'a str,
     posture: Posture,
     rotation: i32,
     y: f64,
@@ -204,145 +140,7 @@ struct AvatarSpawnData<'a> {
     rest_z: f64,
 }
 
-/// Flat color applied to every mesh found inside a spawned part scene (skin, hair, tintable
-/// clothes). Parts that keep their painted colors have no tint.
-#[derive(Component, Debug, Clone, Copy)]
-pub struct AvatarPartTint {
-    pub color: Color,
-}
-
-/// Which slot of the avatar a part fills (`body`, `hair`, `top`, `bottom`, `shoes`...).
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AvatarPartSlot(pub &'static str);
-
-/// Marks a part scene whose materials were already tinted.
-#[derive(Component)]
-pub(crate) struct PartTintApplied;
-
-/// The one body of the pack; every other part is exported on the same skeleton.
-const BODY_FILE: &str = "characters/base/body_010.glb";
-
-/// Spawns the body and all cosmetic parts as children of `parent` (which must live under a
-/// scaled root, see [`AVATAR_MODEL_SCALE`]).
-///
-/// Items the catalog no longer knows are replaced by the first item of their category.
-pub fn spawn_appearance_parts(
-    parent: &mut ChildSpawnerCommands,
-    asset_server: &AssetServer,
-    catalog: &CharacterCatalog,
-    appearance: &AvatarAppearance,
-) {
-    let spawn_part = |parent: &mut ChildSpawnerCommands,
-                      slot: &'static str,
-                      path: &str,
-                      tint: Option<AvatarPartTint>| {
-        let mut entity = parent.spawn((
-            WorldAssetRoot(
-                asset_server.load(GltfAssetLabel::Scene(0).from_asset(path.to_string())),
-            ),
-            AvatarPartSlot(slot),
-            Transform::default(),
-            Visibility::default(),
-        ));
-        if let Some(tint) = tint {
-            entity.insert(tint);
-        }
-        entity.id()
-    };
-
-    // Body (skin tinted); its skeleton animates the whole avatar.
-    let body = spawn_part(
-        parent,
-        "body",
-        BODY_FILE,
-        Some(AvatarPartTint {
-            color: parse_hex_color(&appearance.skin_color),
-        }),
-    );
-    parent.commands().entity(body).insert(AvatarBodyPart);
-
-    // (category, chosen id, color the player picks; faces keep their painted colors)
-    let slots = [
-        ("face", &appearance.face_id, None),
-        ("hair", &appearance.hair_id, Some(&appearance.hair_color)),
-        ("top", &appearance.top_id, Some(&appearance.top_color)),
-        (
-            "bottom",
-            &appearance.bottom_id,
-            Some(&appearance.bottom_color),
-        ),
-        ("shoes", &appearance.shoes_id, Some(&appearance.shoes_color)),
-    ];
-    for (category, id, color) in slots {
-        let Some(item) = resolve_part_id(&catalog.items, category, id) else {
-            continue;
-        };
-        let tint = color.filter(|_| item.tint).map(|hex| AvatarPartTint {
-            color: parse_hex_color(hex),
-        });
-        let part = spawn_part(parent, category, &item.asset_path, tint);
-        parent.commands().entity(part).insert(AvatarClothingPart);
-    }
-
-    for id in &appearance.accessories {
-        if let Some(item) = resolve_part_id(&catalog.items, "accessory", id) {
-            let part = spawn_part(parent, "accessory", &item.asset_path, None);
-            parent.commands().entity(part).insert(AvatarClothingPart);
-        }
-    }
-}
-
-/// Paints a material one flat color. The pack's meshes sample a small spot of a shared
-/// palette texture, so dropping the texture and using the color gives exactly the player's
-/// pick, whatever the part's authored color.
-pub fn paint_flat(material: &mut StandardMaterial, color: Color) {
-    material.base_color = color;
-    material.base_color_texture = None;
-}
-
-/// Replaces the (shared) glTF materials of a freshly spawned part scene by per-entity copies
-/// painted with the tint color, so every avatar can have its own skin/hair/clothes colors.
-fn apply_part_tints(
-    mut commands: Commands,
-    parts: Query<(Entity, &AvatarPartTint), Without<PartTintApplied>>,
-    children_query: Query<&Children>,
-    material_query: Query<&MeshMaterial3d<StandardMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    for (part_entity, tint) in parts.iter() {
-        // The scene instance is spawned in one go; no children yet means it is still loading.
-        if children_query.get(part_entity).is_err() {
-            continue;
-        }
-
-        let mut stack = vec![part_entity];
-        while let Some(entity) = stack.pop() {
-            if let Ok(handle) = material_query.get(entity)
-                && let Some(mut material) = materials.get(&handle.0).cloned()
-            {
-                paint_flat(&mut material, tint.color);
-                let tinted = materials.add(material);
-                // The owning avatar can be despawned (left the room, duplicate join,
-                // appearance changed again) while this scene was still loading; a plain
-                // `insert` would panic the whole app in that case.
-                commands.entity(entity).try_insert(MeshMaterial3d(tinted));
-            }
-
-            if let Ok(children) = children_query.get(entity) {
-                stack.extend(children.iter());
-            }
-        }
-
-        commands.entity(part_entity).try_insert(PartTintApplied);
-    }
-}
-
-fn spawn_avatar_entity(
-    commands: &mut Commands,
-    asset_server: &AssetServer,
-    catalog: &CharacterCatalog,
-    data: AvatarSpawnData<'_>,
-) {
+fn spawn_avatar_entity(commands: &mut Commands, data: AvatarSpawnData<'_>) {
     let world_pos = snapshot_position(
         data.posture,
         data.x,
@@ -369,17 +167,25 @@ fn spawn_avatar_entity(
             Visibility::default(),
         ))
         .with_children(|root| {
-            // Body + modular parts, scaled from Blender units to world units.
-            root.spawn((
+            // The character (body, garments, face, held prop): built and animated by the
+            // `toon_avatar` crate, which keeps it hidden until it is complete. Scaled from the
+            // model's metres to world units.
+            let mut visual = root.spawn((
                 AvatarVisualRoot,
                 avatar_visual_transform(),
-                // Hidden until the skeleton is animated, see `HiddenUntilPosed`.
-                Visibility::Hidden,
-                HiddenUntilPosed::default(),
-            ))
-            .with_children(|visual| {
-                spawn_appearance_parts(visual, asset_server, catalog, &data.appearance);
-            });
+                toon_avatar::Avatar::new(look_from_appearance(&data.appearance)),
+                toon_avatar::AvatarWalkSpeed(0.0),
+                toon_avatar::AvatarFace {
+                    expression: toon_avatar::Expression::from_name(data.expression)
+                        .unwrap_or_default(),
+                    blink: true,
+                },
+                toon_avatar::AvatarHolding(crate::toon::held_prop(data.holding)),
+            ));
+            if data.is_local {
+                // The local player's avatar always gets the best level of detail the device allows.
+                visual.insert(toon_avatar::LodFocus);
+            }
 
             // Nametag above avatar
             root.spawn((
@@ -409,8 +215,6 @@ fn handle_spawn_avatars_snapshot(
         &mut AvatarPosture,
     )>,
     net: Option<Res<NakamaResource>>,
-    asset_server: Res<AssetServer>,
-    catalog: Res<CharacterCatalog>,
 ) {
     let Some(net) = net else { return };
 
@@ -457,8 +261,6 @@ fn handle_spawn_avatars_snapshot(
             let appearance = av.appearance.clone().unwrap_or_default();
             spawn_avatar_entity(
                 &mut commands,
-                &asset_server,
-                &catalog,
                 AvatarSpawnData {
                     user_id: &av.user_id,
                     display_name: &av.display_name,
@@ -466,6 +268,8 @@ fn handle_spawn_avatars_snapshot(
                     z: av.z,
                     is_local,
                     appearance,
+                    expression: &av.expression,
+                    holding: &av.holding,
                     posture: av.posture,
                     rotation: av.rotation,
                     y: av.y,
@@ -482,8 +286,6 @@ fn handle_avatar_joined(
     mut joined_events: MessageReader<NetAvatarJoinedEvent>,
     existing: Query<&Avatar>,
     net: Option<Res<NakamaResource>>,
-    asset_server: Res<AssetServer>,
-    catalog: Res<CharacterCatalog>,
 ) {
     let Some(net) = net else { return };
 
@@ -500,8 +302,6 @@ fn handle_avatar_joined(
         let appearance = joined.appearance.clone().unwrap_or_default();
         spawn_avatar_entity(
             &mut commands,
-            &asset_server,
-            &catalog,
             AvatarSpawnData {
                 user_id: &joined.user_id,
                 display_name: &joined.display_name,
@@ -509,6 +309,8 @@ fn handle_avatar_joined(
                 z: joined.z,
                 is_local,
                 appearance,
+                expression: &joined.expression,
+                holding: &joined.holding,
                 posture: joined.posture,
                 rotation: joined.rotation,
                 y: joined.y,
@@ -519,50 +321,79 @@ fn handle_avatar_joined(
     }
 }
 
+/// The `toon_avatar` character of a game avatar (the child with the visual root).
+fn visual_of(
+    children: Option<&Children>,
+    visuals: &Query<(), With<AvatarVisualRoot>>,
+) -> Option<Entity> {
+    children?.iter().find(|c| visuals.contains(*c))
+}
+
+/// Changes what an avatar wears. The crate keeps the avatar and swaps only the parts that changed.
 fn handle_avatar_appearance_updated(
-    mut commands: Commands,
     mut update_events: MessageReader<NetAvatarAppearanceUpdatedEvent>,
-    mut avatar_query: Query<(Entity, &mut Avatar)>,
-    visual_query: Query<(Entity, &ChildOf), With<AvatarVisualRoot>>,
-    asset_server: Res<AssetServer>,
-    catalog: Res<CharacterCatalog>,
+    mut avatar_query: Query<(&mut Avatar, Option<&Children>)>,
+    visuals: Query<(), With<AvatarVisualRoot>>,
+    mut looks: Query<&mut toon_avatar::Avatar>,
 ) {
     for event in update_events.read() {
         let upd: &AvatarAppearanceUpdated = &event.0;
-        for (avatar_entity, mut avatar) in avatar_query.iter_mut() {
+        for (mut avatar, children) in avatar_query.iter_mut() {
             if avatar.user_id != upd.user_id {
                 continue;
             }
             avatar.appearance = upd.appearance.clone();
-
-            // Remove previous visuals
-            for (vis_entity, child_of) in visual_query.iter() {
-                if child_of.parent() == avatar_entity {
-                    commands.entity(vis_entity).try_despawn();
-                }
+            if let Some(visual) = visual_of(children, &visuals)
+                && let Ok(mut character) = looks.get_mut(visual)
+            {
+                character.look = look_from_appearance(&avatar.appearance);
             }
+        }
+    }
+}
 
-            // Spawn new modular visuals
-            let new_visual = commands
-                .spawn((
-                    AvatarVisualRoot,
-                    avatar_visual_transform(),
-                    Visibility::Hidden,
-                    HiddenUntilPosed::default(),
-                ))
-                .with_children(|visual| {
-                    spawn_appearance_parts(visual, &asset_server, &catalog, &avatar.appearance);
-                })
-                .id();
-
-            // `add_child` has no `try_` variant; the avatar could have left in the same
-            // frame this update arrived, so apply it through a silenced command instead
-            // of letting a missing-entity error panic the app.
-            commands
-                .entity(avatar_entity)
-                .queue_silenced(move |mut entity: EntityWorldMut| {
-                    entity.add_child(new_visual);
-                });
+/// Another avatar's expression, the prop in its hand, and the gesture it performs with it.
+#[allow(clippy::too_many_arguments)]
+fn handle_avatar_emotes(
+    mut expressions: MessageReader<NetAvatarExpressionChangedEvent>,
+    mut holdings: MessageReader<NetAvatarHoldingChangedEvent>,
+    mut actions: MessageReader<NetAvatarActionEvent>,
+    avatars: Query<(&Avatar, Option<&Children>)>,
+    visuals: Query<(), With<AvatarVisualRoot>>,
+    mut faces: Query<&mut toon_avatar::AvatarFace>,
+    mut hands: Query<&mut toon_avatar::AvatarHolding>,
+    mut poses: Query<&mut toon_avatar::AvatarPose>,
+) {
+    let visual_for = |user_id: &str| {
+        avatars
+            .iter()
+            .find(|(a, _)| a.user_id == user_id)
+            .and_then(|(_, children)| visual_of(children, &visuals))
+    };
+    for event in expressions.read() {
+        if let Some(visual) = visual_for(&event.0.user_id)
+            && let Ok(mut face) = faces.get_mut(visual)
+        {
+            face.expression =
+                toon_avatar::Expression::from_name(&event.0.expression).unwrap_or_default();
+        }
+    }
+    for event in holdings.read() {
+        if let Some(visual) = visual_for(&event.0.user_id)
+            && let Ok(mut hand) = hands.get_mut(visual)
+        {
+            hand.0 = crate::toon::held_prop(&event.0.prop_id);
+        }
+    }
+    for event in actions.read() {
+        if event.0.action != protocol::ACTION_DRINK {
+            continue;
+        }
+        if let Some(visual) = visual_for(&event.0.user_id)
+            && let Ok(mut pose) = poses.get_mut(visual)
+            && let Some(drinking) = pose.drinking()
+        {
+            *pose = drinking;
         }
     }
 }
@@ -717,29 +548,6 @@ mod tests {
         assert!((scaled - AVATAR_TARGET_HEIGHT).abs() < 1e-4);
         // The pack is authored in metres, so the scale stays close to 1.
         const { assert!(AVATAR_MODEL_SCALE < 1.2 && AVATAR_MODEL_SCALE > 0.8) };
-    }
-
-    #[test]
-    fn tint_plugin_can_be_requested_by_several_plugins() {
-        // The creator and the avatar plugin both ask for it, in either order.
-        let mut app = App::new();
-        app.add_plugins(MinimalPlugins);
-        ensure_tint_plugin(&mut app);
-        ensure_tint_plugin(&mut app);
-        assert!(app.is_plugin_added::<AvatarTintPlugin>());
-    }
-
-    #[test]
-    fn painting_replaces_the_texture_by_the_flat_color() {
-        let mut material = StandardMaterial {
-            base_color: Color::WHITE,
-            base_color_texture: Some(Handle::default()),
-            ..default()
-        };
-        let skin = Color::srgb(0.8, 0.6, 0.4);
-        paint_flat(&mut material, skin);
-        assert_eq!(material.base_color, skin);
-        assert!(material.base_color_texture.is_none());
     }
 
     #[test]
@@ -915,6 +723,8 @@ mod tests {
                 x,
                 z: 0,
                 appearance: None,
+                expression: String::new(),
+                holding: String::new(),
                 posture: Posture::Stand,
                 rotation: 0,
                 y: 0.0,
@@ -930,7 +740,6 @@ mod tests {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, AssetPlugin::default()))
             .init_asset::<WorldAsset>()
-            .insert_resource(CharacterCatalog::fixture())
             .insert_resource(NakamaResource {
                 handle: nakama_client::NakamaClientHandle::spawn(),
                 local_user_id: "me".into(),

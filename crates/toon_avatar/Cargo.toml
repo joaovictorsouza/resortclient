@@ -1,0 +1,17 @@
+[package]
+name = "toon_avatar"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Reusable Bevy plugins for modular toon-shaded characters (wardrobe, LOD, face, props)"
+
+[features]
+default = []
+# Load the GPU-compressed `.basis` textures (always on for iOS and Android).
+basis_textures = []
+
+[dependencies]
+bevy = { workspace = true, default-features = false, features = ["3d_bevy_render", "scene", "bevy_animation", "bevy_log"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
