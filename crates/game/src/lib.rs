@@ -22,6 +22,8 @@ pub mod google_signin;
 pub mod gpu_compat;
 #[cfg(feature = "kmp-host")]
 pub mod hud_bridge;
+#[cfg(feature = "kmp-host")]
+pub mod screens_bridge;
 pub mod identity;
 pub mod ime;
 pub mod input;

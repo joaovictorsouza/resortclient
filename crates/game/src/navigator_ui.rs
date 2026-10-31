@@ -139,7 +139,7 @@ pub fn input_value(nav: &RoomNavigatorState) -> &str {
 // Actions shared by buttons and the Enter key
 // ---------------------------------------------------------------------------
 
-fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
+pub(crate) fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
     nav.current_tab = tab;
     let Some(net) = net else { return };
     match tab {
@@ -157,7 +157,7 @@ fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&Naka
     }
 }
 
-fn join_room(
+pub(crate) fn join_room(
     room_id: &str,
     nav: &mut RoomNavigatorState,
     meta: &mut ActiveRoomMetadata,
@@ -183,7 +183,7 @@ fn join_room(
     focus.0 = crate::navigator::FocusedInput::None;
 }
 
-fn start_search(nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
+pub(crate) fn start_search(nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
     let query = nav.search_query.trim().to_string();
     if let Some(net) = net {
         nav.is_searching = true;

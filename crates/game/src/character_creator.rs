@@ -988,6 +988,17 @@ fn update_avatar_preview_transform(
 }
 fn save_and_play(
     _: In<Entity>,
+    state: ResMut<CharacterCreatorState>,
+    config: Res<GameConfig>,
+    net: Option<Res<NakamaResource>>,
+    next_state: ResMut<NextState<AppState>>,
+) {
+    save_appearance(state, config, net, next_state);
+}
+
+/// Saves the appearance (profile file + server) and leaves the editor. Shared by the HTML button
+/// and the Compose shell's `creator_save` command.
+pub(crate) fn save_appearance(
     mut state: ResMut<CharacterCreatorState>,
     config: Res<GameConfig>,
     net: Option<Res<NakamaResource>>,

@@ -46,6 +46,7 @@ pub fn build_app(app: &mut App, config: &HostConfig) {
             crate::hud_bridge::HudBridgePlugin,
             crate::wallet_bridge::WalletBridgePlugin,
             crate::game_state_bridge::GameStateBridgePlugin,
+            crate::screens_bridge::ScreensBridgePlugin,
         ));
     }
 }

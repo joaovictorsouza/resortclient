@@ -1,7 +1,9 @@
 package br.eng.joaovictor.resort.game
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNamingStrategy
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 
@@ -11,7 +13,10 @@ import kotlinx.serialization.decodeFromString
  * game can talk to an older shell. A payload that is not valid JSON never throws: [decodeOrNull] gives `null`.
  */
 object BevyJson {
+    @OptIn(ExperimentalSerializationApi::class)
     val json = Json {
+        // The game speaks snake_case (`selected_category`); Kotlin properties stay camelCase.
+        namingStrategy = JsonNamingStrategy.SnakeCase
         ignoreUnknownKeys = true
         isLenient = false
         coerceInputValues = true
