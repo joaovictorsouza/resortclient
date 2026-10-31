@@ -15,7 +15,7 @@ xcodegen generate >/dev/null
 xcodebuild -project iosApp.xcodeproj -scheme iosApp -configuration "$CONF" \
   -destination "$DEST" -derivedDataPath build-device -allowProvisioningUpdates \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGN_STYLE=Automatic build | tail -5
-APP=$(find build-device/Build/Products -name 'iosApp.app' -maxdepth 3 | head -1)
+APP=$(find "build-device/Build/Products/${CONF}-iphoneos" -name 'iosApp.app' -maxdepth 1 | head -1)
 [ "${INSTALL:-1}" = 0 ] && { echo "Built $APP (INSTALL=0: not installed)"; exit 0; }
 xcrun devicectl device install app --device "$DEV" "$APP"
 [ "${LAUNCH:-1}" = 0 ] || xcrun devicectl device process launch --device "$DEV" --terminate-existing br.eng.joaovictor.resort
