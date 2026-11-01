@@ -28,6 +28,7 @@ use crate::character_creator::{
 };
 use crate::config::GameConfig;
 use crate::furniture::{BuildModeState, BuildTool, PlayerInventoryState};
+use crate::inventory::{ComposeInventory, start_placing};
 use crate::navigator::{
     ActiveInputFocus, ActiveRoomMetadata, FocusedInput, NavigatorTab, RoomNavigatorState,
 };
@@ -290,7 +291,8 @@ pub struct ScreensBridgePlugin;
 
 impl Plugin for ScreensBridgePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(
+        // The Compose inventory replaces the bevy_hui window.
+        app.insert_resource(ComposeInventory).add_systems(
             Update,
             (
                 publish_shop,
@@ -443,6 +445,8 @@ fn shop_commands(
 fn inventory_commands(
     mut messages: MessageReader<HostMessage>,
     mut inventory: ResMut<PlayerInventoryState>,
+    mut build: ResMut<BuildModeState>,
+    room_meta: Option<Res<ActiveRoomMetadata>>,
     net: Option<Res<NakamaResource>>,
 ) {
     for msg in messages.read() {
@@ -460,7 +464,11 @@ fn inventory_commands(
             }
             "inventory_select" => {
                 if let Some(c) = parse::<CatalogIdCmd>(msg) {
-                    inventory.selected_catalog_id = Some(c.catalog_id);
+                    // Same as clicking "place" in the bevy_hui window: the owner starts placing and the
+                    // panel closes; anyone else just selects.
+                    let is_owner = room_meta.as_ref().is_some_and(|m| m.is_owner);
+                    inventory.selected_catalog_id = Some(c.catalog_id.clone());
+                    start_placing(&mut inventory, &mut build, is_owner, &c.catalog_id);
                 }
             }
             _ => {}

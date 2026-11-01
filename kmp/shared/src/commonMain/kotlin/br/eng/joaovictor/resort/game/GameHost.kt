@@ -20,6 +20,7 @@ import br.eng.joaovictor.resort.OnboardingStage
 import br.eng.joaovictor.resort.parseHud
 import br.eng.joaovictor.resort.parseStage
 import br.eng.joaovictor.resort.platformLog
+import br.eng.joaovictor.resort.repositories.InventoryRepository
 import br.eng.joaovictor.resort.writeFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -210,6 +211,10 @@ class GameHost(
     }
 
     val backend: BevyBackend = UniffiBackend(host)
+
+    // Repositories are created once with the host, so every screen shares the same snapshots.
+    private val gateway: GameGateway = GameHostGateway(this)
+    val inventory = InventoryRepository(gateway, scope)
 
     fun hudToggleNavigator() = host.sendMessage("hud_toggle_navigator", ByteArray(0))
 

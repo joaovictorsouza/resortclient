@@ -28,6 +28,9 @@ kmp/iosApp                      app iOS (xcodegen: project.yml; Swift: ComposeVi
 - A reconexão do Nakama ao voltar do background usa o `AppLifecycle` do Bevy, que o `bevy-kmp` escreve ao pausar/retomar.
 - Todas as telas continuam em `bevy_hui`, exceto o onboarding.
 
+## Telas já portadas para Compose
+- **Inventário**: `InventoryView` (metade direita da tela, scrim que fecha ao toque) lê `inventory_state` e manda `inventory_open` / `inventory_select`. No host KMP o `ScreensBridgePlugin` insere o marcador `ComposeInventory` e a janela `bevy_hui` do inventário não é criada; no desktop ela continua. `inventory_select` faz o mesmo que o botão "colocar" (`inventory::start_placing`): o dono entra no modo construção com o item e a janela fecha; quem não é dono só seleciona. O botão do HUD (`bevy_hui`) continua abrindo/fechando via `PlayerInventoryState.is_open`.
+
 ## Onboarding nativo (Compose)
 O estado e as regras continuam em Rust (`identity.rs`: `apply_google_result`, `persist_refresh_token`, `submit_nickname`, `apply_account_check`). O Compose só desenha:
 - Rust → Compose: `onboarding_stage {stage: loading|login|nickname|hidden, busy, error, dev}` (muda de estado → evento).

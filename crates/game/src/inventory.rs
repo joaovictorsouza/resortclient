@@ -175,6 +175,10 @@ struct InventoryTemplates {
 // Plugin
 // ---------------------------------------------------------------------------
 
+/// Present when the Compose shell draws the inventory: the bevy_hui window is not spawned then.
+#[derive(Resource)]
+pub struct ComposeInventory;
+
 pub struct InventoryPlugin;
 
 impl Plugin for InventoryPlugin {
@@ -246,21 +250,19 @@ fn setup_inventory_ui(
     functions.register("inv_place", place_selected_item);
 }
 
-fn place_selected_item(
-    In(entity): In<Entity>,
-    tags: Query<&Tags>,
-    mut inventory: ResMut<PlayerInventoryState>,
-    mut build_state: ResMut<BuildModeState>,
-    room_meta: Option<Res<ActiveRoomMetadata>>,
-) {
-    if !room_meta.is_some_and(|m| m.is_owner) {
-        return;
+/// Enters build mode with the inventory item `catalog_id` and closes the window. Owner only; returns
+/// whether placement started. Shared by the bevy_hui button and the Compose shell's `inventory_select`.
+pub fn start_placing(
+    inventory: &mut PlayerInventoryState,
+    build_state: &mut BuildModeState,
+    is_owner: bool,
+    catalog_id: &str,
+) -> bool {
+    if !is_owner {
+        return false;
     }
-    let Some(catalog_id) = tags.get(entity).ok().and_then(|t| t.get("catalog_id")) else {
-        return;
-    };
-    let Some(item) = inventory.items.iter().find(|i| &i.catalog_id == catalog_id) else {
-        return;
+    let Some(item) = inventory.items.iter().find(|i| i.catalog_id == catalog_id) else {
+        return false;
     };
     info!("Entering build mode with item: {}", item.name);
     build_state.is_active = true;
@@ -274,6 +276,21 @@ fn place_selected_item(
         rotation: 0,
     };
     inventory.is_open = false; // Close the window to begin placing.
+    true
+}
+
+fn place_selected_item(
+    In(entity): In<Entity>,
+    tags: Query<&Tags>,
+    mut inventory: ResMut<PlayerInventoryState>,
+    mut build_state: ResMut<BuildModeState>,
+    room_meta: Option<Res<ActiveRoomMetadata>>,
+) {
+    let is_owner = room_meta.is_some_and(|m| m.is_owner);
+    let Some(catalog_id) = tags.get(entity).ok().and_then(|t| t.get("catalog_id")) else {
+        return;
+    };
+    start_placing(&mut inventory, &mut build_state, is_owner, catalog_id);
 }
 
 // ---------------------------------------------------------------------------
@@ -351,10 +368,11 @@ fn sync_inventory_window(
     ids: Query<(Entity, &UiId)>,
     scrolls: Query<(), With<ScrollPosition>>,
     mut needs_fill: Local<bool>,
+    compose: Option<Res<ComposeInventory>>,
 ) {
     let Some(templates) = templates else { return };
 
-    if !inventory.is_open {
+    if !inventory.is_open || compose.is_some() {
         for root in &roots {
             commands.entity(root).despawn();
         }
@@ -577,6 +595,46 @@ mod tests {
             item("rug", "floor_decoration"),
             item("sofa", "collider"),
         ]
+    }
+
+    fn inventory_with(items: Vec<InventoryItemDto>) -> PlayerInventoryState {
+        PlayerInventoryState {
+            is_open: true,
+            items,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn start_placing_enters_build_mode_and_closes_the_window() {
+        let mut inv = inventory_with(sample());
+        let mut build = BuildModeState::default();
+        assert!(start_placing(&mut inv, &mut build, true, "rug"));
+        assert!(build.is_active && build.skip_first_click);
+        assert!(!inv.is_open);
+        match build.active_tool {
+            BuildTool::Placing {
+                ref catalog_id,
+                walkable,
+                rotation,
+                ..
+            } => {
+                assert_eq!(catalog_id, "rug");
+                assert!(walkable);
+                assert_eq!(rotation, 0);
+            }
+            _ => panic!("expected the placing tool"),
+        }
+    }
+
+    #[test]
+    fn start_placing_is_owner_only_and_ignores_unknown_items() {
+        let mut inv = inventory_with(sample());
+        let mut build = BuildModeState::default();
+        assert!(!start_placing(&mut inv, &mut build, false, "rug"));
+        assert!(!start_placing(&mut inv, &mut build, true, "missing"));
+        assert!(!build.is_active);
+        assert!(inv.is_open);
     }
 
     #[test]

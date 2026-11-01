@@ -11,11 +11,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
+import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.game.GameHost
+import br.eng.joaovictor.resort.views.inventory.InventoryView
+import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
 
 /**
  * The whole screen is the Bevy view: the game's UI is still bevy_hui. Native screens (the
- * onboarding) are drawn above it by the shell.
+ * onboarding, the inventory) are drawn above it by the shell.
  */
 @Composable
 fun App(game: GameHost) {
@@ -37,6 +40,8 @@ fun App(game: GameHost) {
                 val fps by game.fps.collectAsState()
                 ComposeHudTest(hud, fps, game::hudToggleNavigator)
             }
+            val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
+            InventoryView(inventoryViewModel)
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }
     }
