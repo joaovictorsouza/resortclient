@@ -48,14 +48,21 @@ pub fn pre_plugins(app: &mut App, config: &HostConfig) {
 pub fn build_app(app: &mut App, config: &HostConfig) {
     // The native shell draws the login and nickname screens (see `onboarding`).
     app.add_plugins((GamePlugin, crate::onboarding::OnboardingPlugin));
-    if crate::hud_bridge::enabled(&config.env) {
-        app.add_plugins((
-            crate::hud_bridge::HudBridgePlugin,
-            crate::wallet_bridge::WalletBridgePlugin,
-            crate::game_state_bridge::GameStateBridgePlugin,
-            crate::screens_bridge::ScreensBridgePlugin,
-        ));
+    // The screen mirrors (wallet, game state, shop/inventory/navigator/creator) are always on: the
+    // Compose screens replace the bevy_hui ones. Only the experimental HUD test bar is opt-in.
+    app.add_plugins((
+        crate::wallet_bridge::WalletBridgePlugin,
+        crate::game_state_bridge::GameStateBridgePlugin,
+        crate::screens_bridge::ScreensBridgePlugin,
+    ));
+    if hud_test_enabled(&config.env) {
+        app.add_plugins(crate::hud_bridge::HudBridgePlugin);
     }
+}
+
+/// Only the Compose HUD test bar depends on `COMPOSE_HUD=1`; the screen bridges do not.
+fn hud_test_enabled(env: &[(String, String)]) -> bool {
+    crate::hud_bridge::enabled(env)
 }
 
 /// Per-GPU renderer workarounds, applied before the renderer exists (see `gpu_compat`).
@@ -101,6 +108,23 @@ fn map_failure(reason: &str) -> google_signin::GoogleSignInError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_hud_test_bar_is_behind_the_flag() {
+        assert!(!hud_test_enabled(&[]));
+        assert!(hud_test_enabled(&[("COMPOSE_HUD".into(), "1".into())]));
+    }
+
+    #[test]
+    fn screen_bridges_are_on_without_any_flag() {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_plugins(crate::screens_bridge::ScreensBridgePlugin);
+        assert!(
+            app.world()
+                .contains_resource::<crate::inventory::ComposeInventory>()
+        );
+    }
 
     #[test]
     fn google_failures_map_to_the_game_errors() {

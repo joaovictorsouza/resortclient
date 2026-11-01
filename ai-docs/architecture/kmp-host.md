@@ -29,6 +29,7 @@ kmp/iosApp                      app iOS (xcodegen: project.yml; Swift: ComposeVi
 - Todas as telas continuam em `bevy_hui`, exceto o onboarding.
 
 ## Telas já portadas para Compose
+- As pontes de telas (`wallet_bridge`, `game_state_bridge`, `screens_bridge`) ficam **sempre ligadas** no host KMP; só a barra de teste do HUD (`hud_bridge`) depende de `COMPOSE_HUD=1`.
 - **Inventário**: `InventoryView` (metade direita da tela, scrim que fecha ao toque) lê `inventory_state` e manda `inventory_open` / `inventory_select`. No host KMP o `ScreensBridgePlugin` insere o marcador `ComposeInventory` e a janela `bevy_hui` do inventário não é criada; no desktop ela continua. `inventory_select` faz o mesmo que o botão "colocar" (`inventory::start_placing`): o dono entra no modo construção com o item e a janela fecha; quem não é dono só seleciona. O botão do HUD (`bevy_hui`) continua abrindo/fechando via `PlayerInventoryState.is_open`.
 
 ## Onboarding nativo (Compose)
