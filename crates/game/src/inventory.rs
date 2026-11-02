@@ -258,6 +258,18 @@ pub fn start_placing(
     is_owner: bool,
     catalog_id: &str,
 ) -> bool {
+    begin_placing(inventory, build_state, is_owner, catalog_id, true)
+}
+
+/// Like [`start_placing`]; `close_window` false keeps the inventory open (a drag in progress hides it
+/// on the shell side and closes it when the item is released).
+pub fn begin_placing(
+    inventory: &mut PlayerInventoryState,
+    build_state: &mut BuildModeState,
+    is_owner: bool,
+    catalog_id: &str,
+    close_window: bool,
+) -> bool {
     if !is_owner {
         return false;
     }
@@ -275,7 +287,9 @@ pub fn start_placing(
         color: parse_hex_color(&item.color),
         rotation: 0,
     };
-    inventory.is_open = false; // Close the window to begin placing.
+    if close_window {
+        inventory.is_open = false; // Close the window to begin placing.
+    }
     true
 }
 
@@ -625,6 +639,15 @@ mod tests {
             }
             _ => panic!("expected the placing tool"),
         }
+    }
+
+    #[test]
+    fn begin_placing_can_keep_the_window_open_for_a_drag() {
+        let mut inv = inventory_with(sample());
+        let mut build = BuildModeState::default();
+        assert!(begin_placing(&mut inv, &mut build, true, "rug", false));
+        assert!(build.is_active);
+        assert!(inv.is_open);
     }
 
     #[test]

@@ -8,6 +8,7 @@ import br.eng.joaovictor.resort.repositories.FakeGateway
 import br.eng.joaovictor.resort.repositories.InventoryRepository
 import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.clampWindow
+import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
 import br.eng.joaovictor.resort.views.inventory.normalizeSearch
 import br.eng.joaovictor.resort.views.inventory.toUi
@@ -91,13 +92,24 @@ class InventoryUiTest {
         assertTrue(dropOutside(Offset(200f, 450f), window))
     }
 
+    @Test
+    fun dragPhasesFollowTheFingerAcrossTheWindowEdge() {
+        assertNull(dragPhase(wasOutside = false, nowOutside = false, released = false)) // still inside
+        assertEquals("move", dragPhase(wasOutside = false, nowOutside = true, released = false)) // just left
+        assertEquals("move", dragPhase(wasOutside = true, nowOutside = true, released = false))
+        assertEquals("cancel", dragPhase(wasOutside = true, nowOutside = false, released = false)) // came back
+        assertEquals("end", dragPhase(wasOutside = true, nowOutside = true, released = true)) // released outside
+        assertEquals("cancel", dragPhase(wasOutside = true, nowOutside = false, released = true)) // released inside
+        assertNull(dragPhase(wasOutside = false, nowOutside = false, released = true))
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun dropSendsTheSurfacePixels() = runTest {
+    fun dragSendsTheSurfacePixelsAndPhase() = runTest {
         val gateway = FakeGateway()
         val repo = InventoryRepository(gateway, CoroutineScope(UnconfinedTestDispatcher(testScheduler)))
-        repo.drop("chair", 640f, 320.5f)
-        assertEquals("inventory_drop", gateway.sent.single().first)
-        assertEquals("""{"catalog_id":"chair","x":640.0,"y":320.5}""", gateway.sent.single().second)
+        repo.drag("chair", 640f, 320.5f, "move")
+        assertEquals("inventory_drag", gateway.sent.single().first)
+        assertEquals("""{"catalog_id":"chair","x":640.0,"y":320.5,"phase":"move"}""", gateway.sent.single().second)
     }
 }

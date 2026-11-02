@@ -28,18 +28,15 @@ use crate::character_creator::{
     apply_item_choice, creator_thumbnail_path, save_appearance,
 };
 use crate::config::GameConfig;
-use crate::furniture::{
-    BuildModeState, BuildTool, PlacedFurniture, PlayerInventoryState, calculate_occupied_tiles,
-    placement_valid, ray_floor_tile, solid_at,
-};
-use crate::inventory::{ComposeInventory, start_placing, thumbnail_path};
+use crate::furniture::{BuildModeState, BuildTool, ExternalPointer, PlayerInventoryState};
+use crate::inventory::{ComposeInventory, begin_placing, start_placing, thumbnail_path};
 use crate::navigator::{
     ActiveInputFocus, ActiveRoomMetadata, ComposeHud, NavigatorTab, RoomNavigatorState,
     RoomSettingsState, set_navigator_open, toggle_room_settings,
 };
 use crate::navigator_ui::{join_room, select_tab, start_search};
 use crate::net::NakamaResource;
-use crate::room::{ActiveRoom, Tile};
+use crate::room::ActiveRoom;
 use crate::shop::{ShopState, ShopStatus, can_afford, set_shop_open};
 use crate::state::AppState;
 use crate::wallet::WalletState;
@@ -50,7 +47,6 @@ use protocol::{
     AvatarAppearance, InventoryItemDto, RoomLayoutDto, RoomSummaryDto, ShopCategoryDto,
     ShopOfferDto,
 };
-use protocol::{ClientMessage, PlaceItemRequest};
 use serde::{Deserialize, Serialize};
 
 pub const EVT_SHOP: &str = "shop_state";
@@ -311,12 +307,13 @@ struct BodyCmd {
     body_type: String,
 }
 
-/// `inventory_drop`: the item was dropped on the game surface at (`x`, `y`) physical pixels.
+/// `inventory_drag`: where the finger is on the game surface, in physical pixels.
 #[derive(Deserialize, Debug, PartialEq)]
-struct DropCmd {
+struct DragCmd {
     catalog_id: String,
     x: f32,
     y: f32,
+    phase: DragPhase,
 }
 
 fn parse<'a, T: Deserialize<'a>>(msg: &'a HostMessage) -> Option<T> {
@@ -347,7 +344,7 @@ impl Plugin for ScreensBridgePlugin {
                     publish_creator,
                     shop_commands,
                     inventory_commands,
-                    inventory_drop,
+                    inventory_drag,
                     hud_commands,
                     build_mode_commands,
                     navigator_commands,
@@ -655,67 +652,86 @@ pub fn drop_to_logical(x: f32, y: f32, scale_factor: f32) -> Vec2 {
     Vec2::new(x, y) / scale_factor.max(f32::EPSILON)
 }
 
-/// Drag and drop from the Compose inventory: places the item on the floor tile under the drop point,
-/// with the same rules as a normal placement (owner only, floor tiles, no solid overlap). An invalid
-/// drop does nothing and the item stays in the inventory.
+/// Phase of a drag that left the inventory window (`inventory_drag`).
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum DragPhase {
+    /// The finger moved (also the first time it is outside the window).
+    Move,
+    /// Released outside the window: place it under the finger if valid.
+    End,
+    /// The finger came back to the window or the gesture was cancelled.
+    Cancel,
+}
+
+/// Live drag from the Compose inventory. Outside the window the shell sends the finger position on
+/// every move; the game shows the normal placement ghost under it (green/red), and on release places
+/// the item there if valid (same rules as a tap). An invalid release leaves the placing tool on, so
+/// the player can still tap a valid tile. Owner only; animals are ignored.
 #[allow(clippy::too_many_arguments)]
-fn inventory_drop(
+fn inventory_drag(
     mut messages: MessageReader<HostMessage>,
     windows: Query<&Window>,
-    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::MainRoomCamera>>,
-    tiles: Query<&Tile>,
-    furniture: Query<&PlacedFurniture>,
-    inventory: Res<PlayerInventoryState>,
+    mut inventory: ResMut<PlayerInventoryState>,
+    mut build: ResMut<BuildModeState>,
+    mut external: ResMut<ExternalPointer>,
     room_meta: Option<Res<ActiveRoomMetadata>>,
-    net: Option<Res<NakamaResource>>,
+    mut was_active: Local<Option<bool>>,
 ) {
     for msg in messages.read() {
-        if msg.name != "inventory_drop" {
+        if msg.name != "inventory_drag" {
             continue;
         }
-        let Some(cmd) = parse::<DropCmd>(msg) else {
+        let Some(cmd) = parse::<DragCmd>(msg) else {
             continue;
         };
-        if !room_meta.as_ref().is_some_and(|m| m.is_owner) {
-            continue;
-        }
-        let (Ok(window), Ok((camera, camera_tf)), Some(net)) =
-            (windows.single(), cameras.single(), net.as_ref())
-        else {
+        let is_owner = room_meta.as_ref().is_some_and(|m| m.is_owner);
+        let Ok(window) = windows.single() else {
             continue;
         };
-        let Some(item) = inventory
-            .items
-            .iter()
-            .find(|i| i.catalog_id == cmd.catalog_id && i.quantity > 0 && i.category != "pet")
-        else {
-            continue;
-        };
-        let pos = drop_to_logical(cmd.x, cmd.y, window.scale_factor());
-        let Some((x, z)) = camera
-            .viewport_to_world(camera_tf, pos)
-            .ok()
-            .and_then(|ray| ray_floor_tile(ray.origin, *ray.direction))
-        else {
-            continue;
-        };
-        let occupied = calculate_occupied_tiles(x, z, item.width, item.depth);
-        let valid = placement_valid(
-            &occupied,
-            item.walkable,
-            |tx, tz| tiles.iter().any(|t| t.x == tx && t.z == tz),
-            |tx, tz| solid_at(&furniture, tx, tz, None),
+        let logical = drop_to_logical(cmd.x, cmd.y, window.scale_factor());
+        info!(
+            "inventory_drag {:?} {} px=({:.0},{:.0}) logical=({:.0},{:.0})",
+            cmd.phase, cmd.catalog_id, cmd.x, cmd.y, logical.x, logical.y
         );
-        if valid {
-            net.handle
-                .send_command(NakamaCommand::SendMessage(ClientMessage::PlaceItem(
-                    PlaceItemRequest {
-                        catalog_id: item.catalog_id.clone(),
-                        x,
-                        z,
-                        rotation: 0,
-                    },
-                )));
+        match cmd.phase {
+            DragPhase::Move | DragPhase::End => {
+                let already = matches!(
+                    &build.active_tool,
+                    BuildTool::Placing { catalog_id, .. } if *catalog_id == cmd.catalog_id
+                );
+                if !already {
+                    let item_ok = inventory.items.iter().any(|i| {
+                        i.catalog_id == cmd.catalog_id && i.quantity > 0 && i.category != "pet"
+                    });
+                    let before = build.is_active;
+                    if !item_ok
+                        || !begin_placing(
+                            &mut inventory,
+                            &mut build,
+                            is_owner,
+                            &cmd.catalog_id,
+                            false,
+                        )
+                    {
+                        continue;
+                    }
+                    *was_active = Some(before);
+                }
+                external.position = Some(logical);
+                if cmd.phase == DragPhase::End {
+                    external.confirm = true;
+                    inventory.is_open = false; // The shell hid the window; now it closes for real.
+                    *was_active = None;
+                }
+            }
+            DragPhase::Cancel => {
+                *external = ExternalPointer::default();
+                if let Some(before) = was_active.take() {
+                    build.active_tool = BuildTool::None;
+                    build.is_active = before;
+                }
+            }
         }
     }
 }
@@ -810,18 +826,106 @@ mod tests {
     }
 
     #[test]
-    fn drop_command_parses_and_maps_to_logical_pixels() {
-        let cmd: DropCmd =
-            serde_json::from_str(r#"{"catalog_id":"chair","x":300.0,"y":150.0}"#).unwrap();
+    fn drag_command_parses_every_phase_and_maps_to_logical_pixels() {
+        let cmd: DragCmd =
+            serde_json::from_str(r#"{"catalog_id":"chair","x":300.0,"y":150.0,"phase":"move"}"#)
+                .unwrap();
         assert_eq!(
             cmd,
-            DropCmd {
+            DragCmd {
                 catalog_id: "chair".into(),
                 x: 300.0,
-                y: 150.0
+                y: 150.0,
+                phase: DragPhase::Move
             }
+        );
+        for (name, phase) in [("end", DragPhase::End), ("cancel", DragPhase::Cancel)] {
+            let json = format!(r#"{{"catalog_id":"c","x":1,"y":2,"phase":"{name}"}}"#);
+            assert_eq!(serde_json::from_str::<DragCmd>(&json).unwrap().phase, phase);
+        }
+        assert!(
+            serde_json::from_str::<DragCmd>(r#"{"catalog_id":"c","x":1,"y":2,"phase":"nope"}"#)
+                .is_err()
         );
         assert_eq!(drop_to_logical(300.0, 150.0, 3.0), Vec2::new(100.0, 50.0));
         assert_eq!(drop_to_logical(10.0, 10.0, 1.0), Vec2::new(10.0, 10.0));
+    }
+
+    fn drag_app(owner: bool) -> App {
+        let mut app = App::new();
+        app.add_plugins(MinimalPlugins);
+        app.add_message::<HostMessage>();
+        app.insert_resource(PlayerInventoryState {
+            is_open: true,
+            items: vec![InventoryItemDto {
+                id: "i".into(),
+                catalog_id: "chair".into(),
+                name: "Chair".into(),
+                category: "collider".into(),
+                quantity: 1,
+                width: 1,
+                depth: 1,
+                walkable: false,
+                color: String::new(),
+                asset_id: String::new(),
+            }],
+            ..Default::default()
+        });
+        app.init_resource::<BuildModeState>();
+        app.init_resource::<ExternalPointer>();
+        app.insert_resource(ActiveRoomMetadata {
+            is_owner: owner,
+            ..Default::default()
+        });
+        app.world_mut().spawn(Window::default());
+        app.add_systems(Update, inventory_drag);
+        app
+    }
+
+    fn drag(app: &mut App, phase: &str) {
+        let json = format!(r#"{{"catalog_id":"chair","x":200,"y":100,"phase":"{phase}"}}"#);
+        app.world_mut().write_message(HostMessage {
+            name: "inventory_drag".into(),
+            payload: json.into_bytes(),
+        });
+        app.update();
+    }
+
+    #[test]
+    fn a_drag_shows_the_placing_ghost_and_release_confirms_it() {
+        let mut app = drag_app(true);
+        drag(&mut app, "move");
+        let build = app.world().resource::<BuildModeState>();
+        assert!(build.is_active);
+        assert!(matches!(build.active_tool, BuildTool::Placing { .. }));
+        assert!(app.world().resource::<PlayerInventoryState>().is_open); // hidden by the shell only
+        let ext = app.world().resource::<ExternalPointer>();
+        assert!(ext.position.is_some() && !ext.confirm);
+
+        drag(&mut app, "end");
+        assert!(app.world().resource::<ExternalPointer>().confirm);
+        assert!(!app.world().resource::<PlayerInventoryState>().is_open);
+    }
+
+    #[test]
+    fn cancelling_a_drag_restores_the_build_state() {
+        let mut app = drag_app(true);
+        drag(&mut app, "move");
+        drag(&mut app, "cancel");
+        let build = app.world().resource::<BuildModeState>();
+        assert!(!build.is_active);
+        assert!(matches!(build.active_tool, BuildTool::None));
+        assert_eq!(
+            *app.world().resource::<ExternalPointer>(),
+            ExternalPointer::default()
+        );
+    }
+
+    #[test]
+    fn only_the_owner_can_drag_an_item_into_the_room() {
+        let mut app = drag_app(false);
+        drag(&mut app, "move");
+        assert!(!app.world().resource::<BuildModeState>().is_active);
+        assert!(app.world().resource::<ExternalPointer>().position.is_none());
     }
 }

@@ -35,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,13 +82,14 @@ fun InventoryView(viewModel: InventoryViewModel) {
         val pos = origin ?: Offset((maxW - winWpx) / 2f, (maxH - winHpx) / 2f)
         var windowBounds by remember { mutableStateOf(Rect.Zero) }
         var drag by remember { mutableStateOf<Drag?>(null) }
+        var outside by remember { mutableStateOf(false) }
 
         Surface(
             modifier = Modifier
                 .offset { IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) }
                 .width(winW)
                 .height(winH)
-                .alpha(if (drag != null) 0.35f else 1f)
+                .alpha(if (drag == null) 1f else if (outside) 0f else 0.35f)
                 .onGloballyPositioned { windowBounds = it.boundsInRoot() },
             shape = WindowShape,
             color = MaterialTheme.colorScheme.surface,
@@ -105,20 +107,33 @@ fun InventoryView(viewModel: InventoryViewModel) {
                 Content(
                     ui,
                     viewModel,
-                    onDragStart = { drag = it },
-                    onDragMove = { drag = drag?.copy(position = it) },
+                    onDragStart = { drag = it; outside = false },
+                    onDragMove = { pos ->
+                        val d = drag ?: return@Content
+                        val now = dropOutside(pos, windowBounds)
+                        dragPhase(outside, now, released = false)?.let { viewModel.drag(d.row.catalogId, pos.x, pos.y, it) }
+                        outside = now
+                        drag = d.copy(position = pos)
+                    },
                     onDragEnd = { end ->
                         val d = drag
-                        drag = null
-                        if (d != null && dropOutside(end, windowBounds)) {
-                            viewModel.drop(d.row.catalogId, end.x, end.y)
+                        if (d != null) {
+                            val now = dropOutside(end, windowBounds)
+                            dragPhase(outside, now, released = true)?.let { viewModel.drag(d.row.catalogId, end.x, end.y, it) }
                         }
+                        drag = null
+                        outside = false
                     },
-                    onDragCancel = { drag = null },
+                    onDragCancel = {
+                        val d = drag
+                        if (d != null) dragPhase(outside, false, released = false)?.let { viewModel.drag(d.row.catalogId, 0f, 0f, it) }
+                        drag = null
+                        outside = false
+                    },
                 )
             }
         }
-        drag?.let { d ->
+        drag?.takeIf { !outside }?.let { d ->
             Box(
                 Modifier.offset { IntOffset((d.position.x - 40).roundToInt(), (d.position.y - 40).roundToInt()) }
                     .size(80.dp)
@@ -143,10 +158,13 @@ internal fun dropOutside(point: Offset, window: Rect): Boolean = !window.contain
 
 @Composable
 private fun TitleBar(onMove: (Offset) -> Unit, onClose: () -> Unit) {
+    // The gesture block below is created once; it must call the latest lambda, which holds the window's
+    // current position (a stale one made every drag restart from the first position, so it never moved).
+    val move by rememberUpdatedState(onMove)
     Row(
         Modifier.fillMaxWidth()
             .background(Color.White.copy(alpha = 0.06f))
-            .pointerInput(Unit) { detectDragGestures { change, amount -> change.consume(); onMove(amount) } }
+            .pointerInput(Unit) { detectDragGestures { change, amount -> change.consume(); move(amount) } }
             .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -113,6 +113,17 @@ class InventoryViewModel(private val inventory: InventoryRepository) : ViewModel
     fun setCategory(value: String) { category.value = value }
     fun setQuery(value: String) { query.value = value }
 
-    /** Dropped on the game surface at ([x], [y]) physical pixels. */
-    fun drop(catalogId: String, x: Float, y: Float) = inventory.drop(catalogId, x, y)
+    /** The finger of a drag that left the window, at ([x], [y]) physical pixels of the game surface. */
+    fun drag(catalogId: String, x: Float, y: Float, phase: String) = inventory.drag(catalogId, x, y, phase)
+}
+
+/**
+ * What to tell the game about a drag step, or `null` for nothing. Inside the window nothing is sent;
+ * outside, every move is; coming back (or cancelling) after having been outside cancels the placement.
+ */
+fun dragPhase(wasOutside: Boolean, nowOutside: Boolean, released: Boolean): String? = when {
+    nowOutside && released -> "end"
+    nowOutside -> "move"
+    wasOutside -> "cancel"
+    else -> null
 }

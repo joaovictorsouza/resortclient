@@ -223,6 +223,15 @@ pub struct BuildModeState {
     pub skip_first_click: bool,
 }
 
+/// A pointer the game cannot see (the Compose shell owns the finger during an inventory drag): the
+/// ghost follows [`position`](Self::position) in logical pixels, and [`confirm`](Self::confirm) acts as the
+/// release that places the item. The ghost system consumes the confirmation.
+#[derive(Resource, Debug, Default, PartialEq)]
+pub struct ExternalPointer {
+    pub position: Option<Vec2>,
+    pub confirm: bool,
+}
+
 impl Default for BuildModeState {
     fn default() -> Self {
         Self {
@@ -300,6 +309,7 @@ pub struct FurniturePlugin;
 impl Plugin for FurniturePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BuildModeState>()
+            .init_resource::<ExternalPointer>()
             .init_resource::<PlayerInventoryState>()
             .add_systems(
                 Update,
@@ -639,6 +649,7 @@ fn handle_ghost_preview(
     mut materials: ResMut<Assets<StandardMaterial>>,
     ui_interaction: Query<&Interaction, With<Node>>,
     net: Option<Res<NakamaResource>>,
+    mut external: ResMut<ExternalPointer>,
 ) {
     let Ok(window) = windows.single() else { return };
     let Ok((camera, camera_transform)) = cameras.single() else {
@@ -678,6 +689,7 @@ fn handle_ghost_preview(
             commands.entity(entity).despawn();
         }
         build_state.hovered_tile = None;
+        *external = ExternalPointer::default();
         return;
     }
 
@@ -691,7 +703,13 @@ fn handle_ghost_preview(
         build_state.skip_first_click = false;
     }
 
-    let (pointer, confirmed) = build_pointer(window, &mouse_button, &touches);
+    let (pointer, confirmed) = match external.position {
+        Some(position) => (Some(position), external.confirm),
+        None => build_pointer(window, &mouse_button, &touches),
+    };
+    if external.confirm {
+        *external = ExternalPointer::default(); // the release is consumed this frame
+    }
     let Some(cursor_pos) = pointer else {
         return;
     };

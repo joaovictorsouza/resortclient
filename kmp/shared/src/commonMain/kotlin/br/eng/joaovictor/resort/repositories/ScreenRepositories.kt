@@ -64,9 +64,12 @@ class InventoryRepository(private val game: GameGateway, scope: CoroutineScope) 
     fun setOpen(open: Boolean) = game.command("inventory_open", "open" to open)
     fun select(catalogId: String) = game.command("inventory_select", "catalog_id" to catalogId)
 
-    /** The item was dropped on the game surface at ([x], [y]) physical pixels (owner places it there). */
-    fun drop(catalogId: String, x: Float, y: Float) =
-        game.command("inventory_drop", "catalog_id" to catalogId, "x" to x, "y" to y)
+    /**
+     * A drag that left the inventory window: [phase] is `move`, `end` (released: place it) or `cancel`.
+     * ([x], [y]) is the finger in physical pixels of the game surface.
+     */
+    fun drag(catalogId: String, x: Float, y: Float, phase: String) =
+        game.command("inventory_drag", "catalog_id" to catalogId, "x" to x, "y" to y, "phase" to phase)
 }
 
 /** HUD buttons that open bevy_hui windows with no Compose screen yet. */
