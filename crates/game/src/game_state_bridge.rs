@@ -9,8 +9,8 @@
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
-//! - `full_screen_open`: `true` while a bevy_hui window is shown (shop, navigator, room settings, doorbell popup,
-//!   character creator); the shell hides its HUD meanwhile. The avatar menu is a small popup and does not count.
+//! - `full_screen_open`: `true` while a big bevy_hui window is shown (shop, navigator, room settings, character
+//!   creator); the shell hides its HUD meanwhile. Small popups over the scene (avatar menu, doorbell) do not count.
 
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::furniture::BuildModeState;
@@ -43,13 +43,13 @@ pub struct GameStateSnapshot {
     pub full_screen_open: bool,
 }
 
-/// Which bevy_hui screens are open besides the character creator (which is an `AppState`).
+/// Which big bevy_hui windows are open besides the character creator (which is an `AppState`). The
+/// avatar menu and the doorbell are small popups over the scene and do not hide the HUD.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenScreens {
     pub shop: bool,
     pub navigator: bool,
     pub room_settings: bool,
-    pub doorbell: bool,
 }
 
 /// A full-screen or modal bevy_hui screen is shown, so the shell's HUD must get out of its way.
@@ -58,7 +58,6 @@ pub fn full_screen_open(state: AppState, screens: &OpenScreens) -> bool {
         || screens.shop
         || screens.navigator
         || screens.room_settings
-        || screens.doorbell
 }
 
 pub fn app_name(state: AppState) -> &'static str {
@@ -145,7 +144,6 @@ struct SnapshotSources<'w> {
     shop: Res<'w, ShopState>,
     navigator: Res<'w, RoomNavigatorState>,
     settings: Res<'w, RoomSettingsState>,
-    doorbell: Res<'w, DoorbellState>,
 }
 
 fn publish_game_state(
@@ -159,7 +157,6 @@ fn publish_game_state(
         shop: src.shop.is_open,
         navigator: src.navigator.is_open,
         room_settings: src.settings.is_open,
-        doorbell: src.doorbell.incoming_request.is_some(),
     };
     let snap = snapshot_with(
         *src.state.get(),
@@ -292,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn each_bevy_hui_window_counts_as_full_screen_but_not_the_avatar_popup() {
+    fn only_big_bevy_hui_windows_count_as_full_screen() {
         let none = OpenScreens::default();
         assert!(!full_screen_open(AppState::InRoom, &none));
         assert!(full_screen_open(AppState::CharacterCreator, &none));
@@ -304,7 +301,6 @@ mod tests {
         assert!(one(|s| s.shop = true));
         assert!(one(|s| s.navigator = true));
         assert!(one(|s| s.room_settings = true));
-        assert!(one(|s| s.doorbell = true));
     }
 
     #[test]
