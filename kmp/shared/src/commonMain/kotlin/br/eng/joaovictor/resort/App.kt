@@ -18,6 +18,7 @@ import br.eng.joaovictor.resort.views.hud.HudView
 import br.eng.joaovictor.resort.views.hud.LocalHudVisibility
 import br.eng.joaovictor.resort.views.hud.HudViewModel
 import br.eng.joaovictor.resort.views.inventory.InventoryView
+import br.eng.joaovictor.resort.views.inventory.LocalThumbnailLoader
 import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
 
 /**
@@ -50,7 +51,10 @@ fun App(game: GameHost) {
                     game.inventory, game.hudCommands, game.hudVisibility,
                 )
             }
-            CompositionLocalProvider(LocalHudVisibility provides game.hudVisibility) {
+            CompositionLocalProvider(
+                LocalHudVisibility provides game.hudVisibility,
+                LocalThumbnailLoader provides ::loadImageFile,
+            ) {
                 HudView(hudViewModel)
                 val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
                 InventoryView(inventoryViewModel)

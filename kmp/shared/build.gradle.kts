@@ -55,6 +55,8 @@ kotlin {
             implementation(compose.foundation)
             implementation(compose.material3)
             implementation(compose.ui)
+            // @Preview for the IDE (KMP plugin renders commonMain previews); no runtime cost in release.
+            implementation(libs.compose.ui.tooling.preview)
             implementation(libs.coroutines.core)
             implementation(libs.androidx.lifecycle.viewmodel.compose)
             implementation(libs.serialization.json)
@@ -83,4 +85,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+dependencies {
+    // Lets the Android Studio / IntelliJ preview pane render the commonMain @Preview functions.
+    debugImplementation(libs.compose.ui.tooling)
 }

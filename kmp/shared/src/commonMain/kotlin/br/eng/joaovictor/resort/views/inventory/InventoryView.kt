@@ -51,7 +51,6 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import br.eng.joaovictor.resort.loadImageFile
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -69,10 +68,17 @@ private val Selected = Color(0xFF4F46E5)
 /** An item being dragged out of the window; [position] is the finger in root (surface) pixels. */
 private data class Drag(val row: InventoryRow, val position: Offset)
 
-/**
- * Floating inventory window: a movable card over the scene (no scrim, touches outside it reach the game).
- * Long-press an item and drag it out of the window to drop it on the floor; tap it to place it.
- */
+/** What the inventory window can ask for; previews pass no-ops. */
+class InventoryActions(
+    val onClose: () -> Unit = {},
+    val onSelect: (String) -> Unit = {},
+    val onQuery: (String) -> Unit = {},
+    val onCategory: (String) -> Unit = {},
+    /** A drag that left the window: (catalogId, x, y, phase) in physical pixels of the game surface. */
+    val onDrag: (String, Float, Float, String) -> Unit = { _, _, _, _ -> },
+)
+
+/** Collects the state and holds the HUD hidden while the window is open. */
 @Composable
 fun InventoryView(viewModel: InventoryViewModel) {
     val ui by viewModel.ui.collectAsState()
@@ -80,6 +86,25 @@ fun InventoryView(viewModel: InventoryViewModel) {
     // The window covers most of the scene: the HUD stays hidden while it is open (also during a drag),
     // and comes back when the window leaves the composition (closed by the player or by the game).
     HideHudWhileVisible(INVENTORY_HUD_OWNER)
+    val actions = remember(viewModel) {
+        InventoryActions(
+            onClose = viewModel::close,
+            onSelect = viewModel::select,
+            onQuery = viewModel::setQuery,
+            onCategory = viewModel::setCategory,
+            onDrag = viewModel::drag,
+        )
+    }
+    InventoryContent(ui, actions)
+}
+
+/**
+ * Floating inventory window: a movable card over the scene (no scrim, touches outside it reach the game).
+ * Long-press an item and drag it out of the window to drop it on the floor; tap it to place it.
+ * Stateless: it takes plain UI state, so it can be previewed without a ViewModel or the game.
+ */
+@Composable
+fun InventoryContent(ui: InventoryUiState, actions: InventoryActions) {
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val maxW = constraints.maxWidth.toFloat()
@@ -111,17 +136,17 @@ fun InventoryView(viewModel: InventoryViewModel) {
                     onMove = { delta ->
                         origin = clampWindow(pos + delta, maxW, maxH, winWpx, winHpx)
                     },
-                    onClose = viewModel::close,
+                    onClose = actions.onClose,
                 )
-                Filters(ui, viewModel)
+                Filters(ui, actions)
                 Content(
                     ui,
-                    viewModel,
+                    actions,
                     onDragStart = { drag = it; outside = false },
                     onDragMove = { pos ->
                         val d = drag ?: return@Content
                         val now = leftWindow(outside, pos, windowBounds)
-                        dragPhase(outside, now, released = false)?.let { viewModel.drag(d.row.catalogId, pos.x, pos.y, it) }
+                        dragPhase(outside, now, released = false)?.let { actions.onDrag(d.row.catalogId, pos.x, pos.y, it) }
                         outside = now
                         drag = d.copy(position = pos)
                     },
@@ -129,14 +154,14 @@ fun InventoryView(viewModel: InventoryViewModel) {
                         val d = drag
                         if (d != null) {
                             val now = leftWindow(outside, end, windowBounds)
-                            dragPhase(outside, now, released = true)?.let { viewModel.drag(d.row.catalogId, end.x, end.y, it) }
+                            dragPhase(outside, now, released = true)?.let { actions.onDrag(d.row.catalogId, end.x, end.y, it) }
                         }
                         drag = null
                         // A committed drag leaves the window hidden until the game closes it (no flash back).
                     },
                     onDragCancel = {
                         val d = drag
-                        if (d != null) dragPhase(outside, false, released = false)?.let { viewModel.drag(d.row.catalogId, 0f, 0f, it) }
+                        if (d != null) dragPhase(outside, false, released = false)?.let { actions.onDrag(d.row.catalogId, 0f, 0f, it) }
                         drag = null
                         outside = false
                     },
@@ -191,11 +216,11 @@ private fun TitleBar(onMove: (Offset) -> Unit, onClose: () -> Unit) {
 }
 
 @Composable
-private fun Filters(ui: InventoryUiState, viewModel: InventoryViewModel) {
+private fun Filters(ui: InventoryUiState, actions: InventoryActions) {
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         OutlinedTextField(
             value = ui.query,
-            onValueChange = viewModel::setQuery,
+            onValueChange = actions.onQuery,
             singleLine = true,
             placeholder = { Text("Buscar") },
             modifier = Modifier.fillMaxWidth(),
@@ -209,7 +234,7 @@ private fun Filters(ui: InventoryUiState, viewModel: InventoryViewModel) {
                     fontSize = 13.sp,
                     modifier = Modifier
                         .background(if (on) Selected else Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
-                        .clickable { viewModel.setCategory(key) }
+                        .clickable { actions.onCategory(key) }
                         .padding(horizontal = 10.dp, vertical = 5.dp),
                 )
             }
@@ -220,7 +245,7 @@ private fun Filters(ui: InventoryUiState, viewModel: InventoryViewModel) {
 @Composable
 private fun Content(
     ui: InventoryUiState,
-    viewModel: InventoryViewModel,
+    actions: InventoryActions,
     onDragStart: (Drag) -> Unit,
     onDragMove: (Offset) -> Unit,
     onDragEnd: (Offset) -> Unit,
@@ -248,7 +273,7 @@ private fun Content(
                     ItemRow(
                         row,
                         ui.canPlace && row.draggable,
-                        { viewModel.select(row.catalogId) },
+                        { actions.onSelect(row.catalogId) },
                         onDragStart, onDragMove, onDragEnd, onDragCancel,
                     )
                 }
@@ -310,8 +335,9 @@ private fun ItemRow(
 /** The cached thumbnail, decoded off the main thread; a neutral square while it is not available. */
 @Composable
 private fun Thumbnail(row: InventoryRow, modifier: Modifier) {
-    val image: ImageBitmap? by produceState<ImageBitmap?>(null, row.thumbnail) {
-        value = if (row.thumbnail.isEmpty()) null else withContext(Dispatchers.Default) { loadImageFile(row.thumbnail) }
+    val load = LocalThumbnailLoader.current
+    val image: ImageBitmap? by produceState<ImageBitmap?>(null, row.thumbnail, load) {
+        value = if (row.thumbnail.isEmpty()) null else withContext(Dispatchers.Default) { load(row.thumbnail) }
     }
     Box(modifier.background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
         image?.let { Image(it, row.name, Modifier.fillMaxSize().padding(2.dp)) }

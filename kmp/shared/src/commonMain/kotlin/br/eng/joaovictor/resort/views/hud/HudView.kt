@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,22 +34,50 @@ private val Silver = Color(0xFFC0C6D0)
 private val Gold = Color(0xFFFFC107)
 private val Chip = Color(0xB3020617)
 
-/** The in-room HUD (replaces the bevy_hui one under the KMP host). Touches outside the controls reach the game. */
+/** What the HUD buttons can ask for; previews pass no-ops. */
+class HudActions(
+    val onShop: () -> Unit = {},
+    val onAvatar: () -> Unit = {},
+    val onBuild: () -> Unit = {},
+    val onSettings: () -> Unit = {},
+    val onInventory: () -> Unit = {},
+    val onNavigator: () -> Unit = {},
+)
+
+/** The in-room HUD (replaces the bevy_hui one under the KMP host). Collects the state and delegates to [HudContent]. */
 @Composable
 fun HudView(viewModel: HudViewModel) {
     val ui by viewModel.ui.collectAsState()
-    // Leaves the composition when hidden, so it no longer intercepts touches meant for the game.
+    val actions = remember(viewModel) {
+        HudActions(
+            onShop = viewModel::toggleShop,
+            onAvatar = viewModel::toggleAvatarMenu,
+            onBuild = viewModel::toggleBuild,
+            onSettings = viewModel::toggleRoomSettings,
+            onInventory = viewModel::toggleInventory,
+            onNavigator = viewModel::toggleNavigator,
+        )
+    }
+    HudContent(ui, actions)
+}
+
+/**
+ * Stateless HUD: plain UI state in, callbacks out, so it can be previewed without a ViewModel or the
+ * game. Touches outside the controls reach the game; hidden, it leaves the composition.
+ */
+@Composable
+fun HudContent(ui: HudUiState, actions: HudActions) {
     AnimatedVisibility(
         visible = ui.visible,
         enter = fadeIn() + slideInVertically { -it / 4 },
         exit = fadeOut() + slideOutVertically { -it / 4 },
     ) {
-        HudContent(ui, viewModel)
+        HudBody(ui, actions)
     }
 }
 
 @Composable
-private fun HudContent(ui: HudUiState, viewModel: HudViewModel) {
+private fun HudBody(ui: HudUiState, actions: HudActions) {
     Box(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp)) {
         Text(
             ui.roomTitle,
@@ -68,16 +97,16 @@ private fun HudContent(ui: HudUiState, viewModel: HudViewModel) {
         ) {
             WalletChip(Silver, ui.silver)
             WalletChip(Gold, ui.gold)
-            HudButton("🏪", Color(0xFFB88514), onClick = viewModel::toggleShop)
-            HudButton("👤", Color(0xFF5940A6), onClick = viewModel::toggleAvatarMenu)
+            HudButton("🏪", Color(0xFFB88514), onClick = actions.onShop)
+            HudButton("👤", Color(0xFF5940A6), onClick = actions.onAvatar)
         }
         Row(Modifier.align(Alignment.BottomEnd), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (ui.isOwner) {
-                HudButton("🔨", Color(0xFFB37333), active = ui.buildMode, onClick = viewModel::toggleBuild)
-                HudButton("⚙", Color(0xFF4D5973), onClick = viewModel::toggleRoomSettings)
+                HudButton("🔨", Color(0xFFB37333), active = ui.buildMode, onClick = actions.onBuild)
+                HudButton("⚙", Color(0xFF4D5973), onClick = actions.onSettings)
             }
-            HudButton("🎒", Color(0xFF338C73), onClick = viewModel::toggleInventory)
-            HudButton("🧭", Color(0xFF3359A6), onClick = viewModel::toggleNavigator)
+            HudButton("🎒", Color(0xFF338C73), onClick = actions.onInventory)
+            HudButton("🧭", Color(0xFF3359A6), onClick = actions.onNavigator)
         }
     }
 }
