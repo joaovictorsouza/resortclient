@@ -14,7 +14,7 @@
 
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::furniture::BuildModeState;
-use crate::navigator::{ActiveRoomMetadata, DoorbellState, RoomNavigatorState, RoomSettingsState};
+use crate::navigator::{ActiveRoomMetadata, RoomNavigatorState, RoomSettingsState};
 use crate::room::ActiveRoom;
 use crate::shop::ShopState;
 use crate::state::AppState;
