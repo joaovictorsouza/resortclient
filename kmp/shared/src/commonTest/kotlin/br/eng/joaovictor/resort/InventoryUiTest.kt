@@ -6,7 +6,10 @@ import br.eng.joaovictor.resort.models.InventoryItem
 import br.eng.joaovictor.resort.models.InventoryState
 import br.eng.joaovictor.resort.repositories.FakeGateway
 import br.eng.joaovictor.resort.repositories.InventoryRepository
+import br.eng.joaovictor.resort.views.hud.HudVisibility
 import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
+import br.eng.joaovictor.resort.views.inventory.INVENTORY_HUD_OWNER
+import br.eng.joaovictor.resort.views.inventory.WINDOW_HEIGHT_FRACTION
 import br.eng.joaovictor.resort.views.inventory.clampWindow
 import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
@@ -80,6 +83,36 @@ class InventoryUiTest {
     fun placingIsOnlyForTheRoomOwner() {
         assertFalse(state().toUi().canPlace)
         assertTrue(state().copy(canPlace = true).toUi().canPlace)
+    }
+
+    @Test
+    fun theHudHidesWhileTheInventoryIsOpenAndReturnsWhenItCloses() {
+        val hud = HudVisibility()
+        assertTrue(hud.visible.value)
+        hud.hide(INVENTORY_HUD_OWNER) // window enters the composition
+        assertFalse(hud.visible.value)
+        hud.show(INVENTORY_HUD_OWNER) // closed by the player, a placement or the game
+        assertTrue(hud.visible.value)
+    }
+
+    @Test
+    fun theInventoryAndAnotherScreenBothHoldTheHud() {
+        val hud = HudVisibility()
+        hud.hide(INVENTORY_HUD_OWNER)
+        hud.hide("other-screen")
+        hud.show(INVENTORY_HUD_OWNER)
+        assertFalse(hud.visible.value) // the other screen still holds it
+        hud.show("other-screen")
+        assertTrue(hud.visible.value)
+    }
+
+    @Test
+    fun theWindowTakesAboutNinetyPercentOfTheHeightAndStillClamps() {
+        assertEquals(0.9f, WINDOW_HEIGHT_FRACTION)
+        val maxH = 400f
+        val winH = maxH * WINDOW_HEIGHT_FRACTION
+        // Dragged far down it stops at the bottom edge of the area.
+        assertEquals(maxH - winH, clampWindow(Offset(0f, 999f), 800f, maxH, 300f, winH).y)
     }
 
     @Test

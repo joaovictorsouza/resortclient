@@ -52,9 +52,16 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.eng.joaovictor.resort.loadImageFile
+import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+/** The HUD owner name the window holds while open (see `HudVisibility`). */
+internal const val INVENTORY_HUD_OWNER = "inventory"
+
+/** Share of the available (safe area) height the window takes. */
+internal const val WINDOW_HEIGHT_FRACTION = 0.9f
 
 private val WindowShape = RoundedCornerShape(16.dp)
 private val Selected = Color(0xFF4F46E5)
@@ -70,12 +77,15 @@ private data class Drag(val row: InventoryRow, val position: Offset)
 fun InventoryView(viewModel: InventoryViewModel) {
     val ui by viewModel.ui.collectAsState()
     if (!ui.open) return
+    // The window covers most of the scene: the HUD stays hidden while it is open (also during a drag),
+    // and comes back when the window leaves the composition (closed by the player or by the game).
+    HideHudWhileVisible(INVENTORY_HUD_OWNER)
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val maxW = constraints.maxWidth.toFloat()
         val maxH = constraints.maxHeight.toFloat()
         val winW = minOf(420.dp, maxWidth * 0.6f)
-        val winH = maxHeight * 0.7f
+        val winH = maxHeight * WINDOW_HEIGHT_FRACTION
         val winWpx = with(density) { winW.toPx() }
         val winHpx = with(density) { winH.toPx() }
         var origin by remember { mutableStateOf<Offset?>(null) }
