@@ -723,6 +723,18 @@ fn inventory_drag(
                             false,
                         )
                     {
+                        if !*warned {
+                            warn!(
+                                "inventory_drag ignored for {}: owner={is_owner} item_in_inventory={item_ok}",
+                                cmd.catalog_id
+                            );
+                            *warned = true;
+                        }
+                        if cmd.phase == DragPhase::End {
+                            // The shell keeps the window hidden after a drag; never leave it invisible.
+                            inventory.is_open = false;
+                            *warned = false;
+                        }
                         continue;
                     }
                     *was_active = Some(before);

@@ -89,7 +89,7 @@ fun InventoryView(viewModel: InventoryViewModel) {
                 .offset { IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) }
                 .width(winW)
                 .height(winH)
-                .alpha(if (drag == null) 1f else if (outside) 0f else 0.35f)
+                .alpha(if (outside) 0f else if (drag != null) 0.35f else 1f)
                 .onGloballyPositioned { windowBounds = it.boundsInRoot() },
             shape = WindowShape,
             color = MaterialTheme.colorScheme.surface,
@@ -110,7 +110,7 @@ fun InventoryView(viewModel: InventoryViewModel) {
                     onDragStart = { drag = it; outside = false },
                     onDragMove = { pos ->
                         val d = drag ?: return@Content
-                        val now = dropOutside(pos, windowBounds)
+                        val now = leftWindow(outside, pos, windowBounds)
                         dragPhase(outside, now, released = false)?.let { viewModel.drag(d.row.catalogId, pos.x, pos.y, it) }
                         outside = now
                         drag = d.copy(position = pos)
@@ -118,11 +118,11 @@ fun InventoryView(viewModel: InventoryViewModel) {
                     onDragEnd = { end ->
                         val d = drag
                         if (d != null) {
-                            val now = dropOutside(end, windowBounds)
+                            val now = leftWindow(outside, end, windowBounds)
                             dragPhase(outside, now, released = true)?.let { viewModel.drag(d.row.catalogId, end.x, end.y, it) }
                         }
                         drag = null
-                        outside = false
+                        // A committed drag leaves the window hidden until the game closes it (no flash back).
                     },
                     onDragCancel = {
                         val d = drag
@@ -153,8 +153,15 @@ internal fun clampWindow(target: Offset, maxW: Float, maxH: Float, winW: Float, 
         target.y.coerceIn(0f, (maxH - winH).coerceAtLeast(0f)),
     )
 
-/** A drop counts only when released outside the window. */
+/** A point outside the window's bounds. */
 internal fun dropOutside(point: Offset, window: Rect): Boolean = !window.contains(point)
+
+/**
+ * Once a drag has left the window it stays "outside" until it ends: the window is hidden then, so its
+ * old area (often the middle of the screen) must be usable to position the item in the room.
+ */
+internal fun leftWindow(wasOutside: Boolean, point: Offset, window: Rect): Boolean =
+    wasOutside || dropOutside(point, window)
 
 @Composable
 private fun TitleBar(onMove: (Offset) -> Unit, onClose: () -> Unit) {

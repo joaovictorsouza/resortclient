@@ -10,6 +10,7 @@ import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.clampWindow
 import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
+import br.eng.joaovictor.resort.views.inventory.leftWindow
 import br.eng.joaovictor.resort.views.inventory.normalizeSearch
 import br.eng.joaovictor.resort.views.inventory.toUi
 import kotlinx.coroutines.CoroutineScope
@@ -96,6 +97,18 @@ class InventoryUiTest {
         assertFalse(dropOutside(Offset(200f, 200f), window))
         assertTrue(dropOutside(Offset(50f, 200f), window))
         assertTrue(dropOutside(Offset(200f, 450f), window))
+    }
+
+    @Test
+    fun onceOutsideTheDragStaysOutsideEvenOverTheHiddenWindow() {
+        val window = Rect(100f, 100f, 500f, 400f)
+        val inside = Offset(300f, 250f)
+        assertFalse(leftWindow(wasOutside = false, point = inside, window = window)) // still inside
+        assertTrue(leftWindow(wasOutside = false, point = Offset(50f, 250f), window = window)) // just left
+        // Back over the (hidden) window area: still placing, so the room under it can be used.
+        assertTrue(leftWindow(wasOutside = true, point = inside, window = window))
+        assertEquals("move", dragPhase(wasOutside = true, nowOutside = true, released = false))
+        assertEquals("end", dragPhase(wasOutside = true, nowOutside = true, released = true))
     }
 
     @Test
