@@ -55,6 +55,9 @@ import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import br.eng.joaovictor.resort.views.preview.PreviewData
+import br.eng.joaovictor.resort.views.preview.PreviewScene
+import org.jetbrains.compose.ui.tooling.preview.Preview
 
 /** The HUD owner name the window holds while open (see `HudVisibility`). */
 internal const val INVENTORY_HUD_OWNER = "inventory"
@@ -342,4 +345,48 @@ private fun Thumbnail(row: InventoryRow, modifier: Modifier) {
     Box(modifier.background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
         image?.let { Image(it, row.name, Modifier.fillMaxSize().padding(2.dp)) }
     }
+}
+
+// ---- Previews (IDE only; see ai-docs/process/previews-compose.md) ----
+
+private val Loaded = PreviewData.inventoryLoaded
+
+// Thumbnails are absent in previews (the default loader returns null), so the placeholder shows.
+@Preview(name = "Items, one selected (landscape)", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryItemsPreview() = PreviewScene { InventoryContent(Loaded, InventoryActions()) }
+
+@Preview(name = "Items (portrait)", widthDp = 360, heightDp = 780)
+@Composable
+private fun InventoryPortraitPreview() = PreviewScene { InventoryContent(Loaded, InventoryActions()) }
+
+@Preview(name = "Loading", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryLoadingPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(loading = true, rows = emptyList()), InventoryActions()) }
+
+@Preview(name = "Empty inventory", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryEmptyPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(rows = emptyList()), InventoryActions()) }
+
+@Preview(name = "Search with no result", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryNoResultPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(query = "zzz"), InventoryActions()) }
+
+@Preview(name = "Not the owner (warning, no drag)", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryNotOwnerPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(canPlace = false), InventoryActions()) }
+
+@Preview(name = "Category filter", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryCategoryPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(category = "collider"), InventoryActions()) }
+
+@Preview(name = "Long names only", widthDp = 360, heightDp = 780)
+@Composable
+private fun InventoryLongNamesPreview() = PreviewScene {
+    InventoryContent(Loaded.copy(rows = Loaded.rows.filter { it.name.length > 20 }), InventoryActions())
 }
