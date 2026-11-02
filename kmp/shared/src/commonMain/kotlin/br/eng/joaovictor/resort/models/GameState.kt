@@ -50,6 +50,8 @@ data class GameState(
     val room: RoomInfo? = null,
     /** The room is in build mode (`game_state.build_mode`); only ever true inside a room. */
     @SerialName("build_mode") val buildMode: Boolean = false,
+    /** A bevy_hui full-screen/modal screen is shown (shop, navigator, settings, avatar menu, doorbell, creator). */
+    @SerialName("full_screen_open") val fullScreenOpen: Boolean = false,
 ) {
     /** In a room (also while the connection is being restored: the room is kept). */
     val inRoom: Boolean get() = app == AppPhase.InRoom && room != null

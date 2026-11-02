@@ -27,6 +27,7 @@ import br.eng.joaovictor.resort.repositories.InventoryRepository
 import br.eng.joaovictor.resort.repositories.NavigatorRepository
 import br.eng.joaovictor.resort.repositories.ShopRepository
 import br.eng.joaovictor.resort.repositories.WalletRepository
+import br.eng.joaovictor.resort.views.hud.HudVisibility
 import br.eng.joaovictor.resort.writeFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -227,6 +228,9 @@ class GameHost(
     val navigator = NavigatorRepository(gateway, scope)
     val inventory = InventoryRepository(gateway, scope)
     val hudCommands = HudRepository(gateway)
+
+    /** Compose screens hide the HUD through this (see `HideHudWhileVisible`). */
+    val hudVisibility = HudVisibility()
 
     fun hudToggleNavigator() = host.sendMessage("hud_toggle_navigator", ByteArray(0))
 

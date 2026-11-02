@@ -6,6 +6,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.game.GameHost
 import br.eng.joaovictor.resort.views.hud.HudView
+import br.eng.joaovictor.resort.views.hud.LocalHudVisibility
 import br.eng.joaovictor.resort.views.hud.HudViewModel
 import br.eng.joaovictor.resort.views.inventory.InventoryView
 import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
@@ -45,12 +47,14 @@ fun App(game: GameHost) {
             val hudViewModel = viewModel {
                 HudViewModel(
                     game.gameState, game.wallet, game.buildMode, game.shop, game.navigator,
-                    game.inventory, game.hudCommands,
+                    game.inventory, game.hudCommands, game.hudVisibility,
                 )
             }
-            HudView(hudViewModel)
-            val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
-            InventoryView(inventoryViewModel)
+            CompositionLocalProvider(LocalHudVisibility provides game.hudVisibility) {
+                HudView(hudViewModel)
+                val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
+                InventoryView(inventoryViewModel)
+            }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }
     }

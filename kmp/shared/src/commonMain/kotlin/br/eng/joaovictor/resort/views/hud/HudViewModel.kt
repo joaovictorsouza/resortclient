@@ -45,10 +45,14 @@ fun visibilityLabel(visibility: String): String = when (visibility) {
 fun roomTitle(name: String, visibility: String): String =
     "${name.ifEmpty { "The Grand Lobby" }}  •  [${visibilityLabel(visibility)}]"
 
-fun hudUi(game: GameState, wallet: Wallet): HudUiState {
+/**
+ * The HUD shows in a room, unless a bevy_hui full-screen screen is open ([GameState.fullScreenOpen])
+ * or a Compose screen holds it hidden ([hiddenByCompose], see [HudVisibility]).
+ */
+fun hudUi(game: GameState, wallet: Wallet, hiddenByCompose: Boolean = false): HudUiState {
     val room = game.room
     return HudUiState(
-        visible = game.inRoom,
+        visible = game.inRoom && !game.fullScreenOpen && !hiddenByCompose,
         roomTitle = room?.let { roomTitle(it.name, it.visibility) }.orEmpty(),
         isOwner = game.isOwnRoom,
         silver = if (wallet.loaded) formatAmount(wallet.silver) else "-",
@@ -66,8 +70,10 @@ class HudViewModel(
     private val navigator: NavigatorRepository,
     private val inventory: InventoryRepository,
     private val hud: HudRepository,
+    visibility: HudVisibility,
 ) : ViewModel() {
-    val ui: StateFlow<HudUiState> = combine(gameState.state, wallet.state, ::hudUi)
+    val ui: StateFlow<HudUiState> =
+        combine(gameState.state, wallet.state, visibility.visible) { game, w, visible -> hudUi(game, w, !visible) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HudUiState())
 
     fun toggleBuild() = build.set(!ui.value.buildMode)

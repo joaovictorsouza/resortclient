@@ -5,6 +5,7 @@ import br.eng.joaovictor.resort.models.Connection
 import br.eng.joaovictor.resort.models.GameState
 import br.eng.joaovictor.resort.models.RoomInfo
 import br.eng.joaovictor.resort.models.Wallet
+import br.eng.joaovictor.resort.views.hud.HudVisibility
 import br.eng.joaovictor.resort.views.hud.formatAmount
 import br.eng.joaovictor.resort.views.hud.hudUi
 import br.eng.joaovictor.resort.views.hud.roomTitle
@@ -59,5 +60,46 @@ class HudUiTest {
         assertTrue(owner.isOwner && owner.buildMode)
         assertFalse(hudUi(inRoom(owner = false), Wallet()).isOwner)
         assertTrue(hudUi(inRoom(connection = Connection.Reconnecting), Wallet()).reconnecting)
+    }
+
+    @Test
+    fun aBevyHuiFullScreenScreenHidesTheHud() {
+        val shop = inRoom().copy(fullScreenOpen = true)
+        assertFalse(hudUi(shop, Wallet()).visible)
+        assertTrue(hudUi(inRoom(), Wallet()).visible)
+    }
+
+    @Test
+    fun theHudIsVisibleOnlyInARoomWithNoScreenAndNoComposeOwner() {
+        assertTrue(hudUi(inRoom(), Wallet(), hiddenByCompose = false).visible)
+        assertFalse(hudUi(inRoom(), Wallet(), hiddenByCompose = true).visible)
+        assertFalse(hudUi(GameState.INITIAL, Wallet(), hiddenByCompose = false).visible) // not in a room
+        assertFalse(hudUi(inRoom().copy(fullScreenOpen = true), Wallet(), hiddenByCompose = true).visible)
+    }
+
+    @Test
+    fun theHudControllerHidesWhileAnyOwnerHoldsIt() {
+        val hud = HudVisibility()
+        assertTrue(hud.visible.value)
+        hud.hide("a")
+        hud.hide("b")
+        assertFalse(hud.visible.value)
+        hud.show("a")
+        assertFalse(hud.visible.value) // "b" still holds it
+        hud.show("b")
+        assertTrue(hud.visible.value)
+    }
+
+    @Test
+    fun hidingTwiceIsIdempotentAndReleasingAnUnknownOwnerIsANoOp() {
+        val hud = HudVisibility()
+        hud.show("nobody") // not holding it
+        assertTrue(hud.visible.value)
+        hud.hide("a")
+        hud.hide("a") // twice is still one hold
+        hud.show("a")
+        assertTrue(hud.visible.value)
+        hud.show("a") // already released
+        assertTrue(hud.visible.value)
     }
 }

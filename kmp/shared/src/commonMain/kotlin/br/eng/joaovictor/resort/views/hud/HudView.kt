@@ -1,5 +1,10 @@
 package br.eng.joaovictor.resort.views.hud
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,7 +37,18 @@ private val Chip = Color(0xB3020617)
 @Composable
 fun HudView(viewModel: HudViewModel) {
     val ui by viewModel.ui.collectAsState()
-    if (!ui.visible) return
+    // Leaves the composition when hidden, so it no longer intercepts touches meant for the game.
+    AnimatedVisibility(
+        visible = ui.visible,
+        enter = fadeIn() + slideInVertically { -it / 4 },
+        exit = fadeOut() + slideOutVertically { -it / 4 },
+    ) {
+        HudContent(ui, viewModel)
+    }
+}
+
+@Composable
+private fun HudContent(ui: HudUiState, viewModel: HudViewModel) {
     Box(Modifier.fillMaxSize().safeDrawingPadding().padding(12.dp)) {
         Text(
             ui.roomTitle,
