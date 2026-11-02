@@ -60,6 +60,8 @@ data class InventoryState(
     val loading: Boolean = false,
     val items: List<InventoryItem> = emptyList(),
     val selectedCatalogId: String? = null,
+    /** Only the owner of the room can place items. */
+    val canPlace: Boolean = false,
 )
 
 // ---- Room navigator (`navigator_state`) ----

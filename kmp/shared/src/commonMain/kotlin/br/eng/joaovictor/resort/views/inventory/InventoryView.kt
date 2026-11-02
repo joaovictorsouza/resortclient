@@ -214,12 +214,27 @@ private fun Content(
         ui.isEmpty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(if (ui.rows.isEmpty()) "Seu inventário está vazio" else "Nenhum item encontrado")
         }
-        else -> LazyColumn(
-            Modifier.padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            items(ui.visible, key = { it.catalogId }) { row ->
-                ItemRow(row, { viewModel.select(row.catalogId) }, onDragStart, onDragMove, onDragEnd, onDragCancel)
+        else -> Column {
+            if (!ui.canPlace) {
+                Text(
+                    "Só o dono da sala pode colocar itens aqui.",
+                    color = Color(0xFFFFC107),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                )
+            }
+            LazyColumn(
+                Modifier.padding(horizontal = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                items(ui.visible, key = { it.catalogId }) { row ->
+                    ItemRow(
+                        row,
+                        ui.canPlace && row.draggable,
+                        { viewModel.select(row.catalogId) },
+                        onDragStart, onDragMove, onDragEnd, onDragCancel,
+                    )
+                }
             }
         }
     }
@@ -228,6 +243,7 @@ private fun Content(
 @Composable
 private fun ItemRow(
     row: InventoryRow,
+    draggable: Boolean,
     onTap: () -> Unit,
     onDragStart: (Drag) -> Unit,
     onDragMove: (Offset) -> Unit,
@@ -244,7 +260,7 @@ private fun ItemRow(
             .onGloballyPositioned { topLeft = it.positionInRoot() }
             .clickable(onClick = onTap)
             .then(
-                if (row.draggable) {
+                if (draggable) {
                     Modifier.pointerInput(row.catalogId) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = { local ->

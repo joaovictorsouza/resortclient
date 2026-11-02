@@ -34,6 +34,8 @@ data class InventoryUiState(
     val categories: List<String> = listOf(ALL_CATEGORIES),
     val category: String = ALL_CATEGORIES,
     val query: String = "",
+    /** Only the owner of the room can place items (tap or drag). */
+    val canPlace: Boolean = false,
 ) {
     val visible: List<InventoryRow> get() = filterRows(rows, category, query)
     val isEmpty: Boolean get() = !loading && visible.isEmpty()
@@ -97,6 +99,7 @@ fun InventoryState.toUi(category: String = ALL_CATEGORIES, query: String = ""): 
         // A category that is no longer present falls back to everything.
         category = category.takeIf { it in categories } ?: ALL_CATEGORIES,
         query = query,
+        canPlace = canPlace,
     )
 }
 

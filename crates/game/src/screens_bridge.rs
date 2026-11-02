@@ -111,12 +111,19 @@ pub struct InventorySnapshot {
     pub loading: bool,
     pub items: Vec<InventoryItemSnapshot>,
     pub selected_catalog_id: Option<String>,
+    /// Only the room's owner can place items; the shell disables placing and says why otherwise.
+    pub can_place: bool,
 }
 
 impl InventorySnapshot {
     /// `thumbnail_file` maps a catalog id to the local path of its thumbnail ("" when not cached).
-    pub fn new(s: &PlayerInventoryState, thumbnail_file: impl Fn(&str) -> String) -> Self {
+    pub fn new(
+        s: &PlayerInventoryState,
+        can_place: bool,
+        thumbnail_file: impl Fn(&str) -> String,
+    ) -> Self {
         Self {
+            can_place,
             open: s.is_open,
             loading: s.is_loading,
             items: s
@@ -390,6 +397,7 @@ fn publish_shop(
 
 fn publish_inventory(
     inventory: Res<PlayerInventoryState>,
+    room_meta: Option<Res<ActiveRoomMetadata>>,
     cdn: Option<Res<CdnAssets>>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
@@ -398,7 +406,7 @@ fn publish_inventory(
     publish(
         &outbox,
         EVT_INVENTORY,
-        InventorySnapshot::new(&inventory, |id| {
+        InventorySnapshot::new(&inventory, room_meta.is_some_and(|m| m.is_owner), |id| {
             cdn.as_deref()
                 .map(|c| cached_thumbnail(c, id))
                 .unwrap_or_default()
@@ -677,6 +685,7 @@ fn inventory_drag(
     mut external: ResMut<ExternalPointer>,
     room_meta: Option<Res<ActiveRoomMetadata>>,
     mut was_active: Local<Option<bool>>,
+    mut warned: Local<bool>,
 ) {
     for msg in messages.read() {
         if msg.name != "inventory_drag" {
@@ -724,8 +733,12 @@ fn inventory_drag(
                     inventory.is_open = false; // The shell hid the window; now it closes for real.
                     *was_active = None;
                 }
+                if cmd.phase == DragPhase::End {
+                    *warned = false;
+                }
             }
             DragPhase::Cancel => {
+                *warned = false;
                 *external = ExternalPointer::default();
                 if let Some(before) = was_active.take() {
                     build.active_tool = BuildTool::None;
@@ -818,7 +831,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        let snap = InventorySnapshot::new(&state, |id| format!("/cache/{id}.png"));
+        let snap = InventorySnapshot::new(&state, true, |id| format!("/cache/{id}.png"));
         let json = serde_json::to_value(&snap).unwrap();
         assert_eq!(json["items"][0]["catalog_id"], "chair");
         assert_eq!(json["items"][0]["thumbnail"], "/cache/chair.png");

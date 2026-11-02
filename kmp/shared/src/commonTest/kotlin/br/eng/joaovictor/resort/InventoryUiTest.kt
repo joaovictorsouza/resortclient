@@ -76,6 +76,12 @@ class InventoryUiTest {
     }
 
     @Test
+    fun placingIsOnlyForTheRoomOwner() {
+        assertFalse(state().toUi().canPlace)
+        assertTrue(state().copy(canPlace = true).toUi().canPlace)
+    }
+
+    @Test
     fun theWindowStaysInsideTheScreen() {
         assertEquals(Offset(0f, 0f), clampWindow(Offset(-50f, -9f), 1000f, 600f, 400f, 300f))
         assertEquals(Offset(600f, 300f), clampWindow(Offset(900f, 500f), 1000f, 600f, 400f, 300f))
