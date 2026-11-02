@@ -124,6 +124,10 @@ mod tests {
             app.world()
                 .contains_resource::<crate::inventory::ComposeInventory>()
         );
+        assert!(
+            app.world()
+                .contains_resource::<crate::navigator::ComposeHud>()
+        );
     }
 
     #[test]

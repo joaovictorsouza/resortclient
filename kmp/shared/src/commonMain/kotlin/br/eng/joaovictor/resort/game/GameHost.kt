@@ -20,7 +20,13 @@ import br.eng.joaovictor.resort.OnboardingStage
 import br.eng.joaovictor.resort.parseHud
 import br.eng.joaovictor.resort.parseStage
 import br.eng.joaovictor.resort.platformLog
+import br.eng.joaovictor.resort.repositories.BuildModeRepository
+import br.eng.joaovictor.resort.repositories.GameStateRepository
+import br.eng.joaovictor.resort.repositories.HudRepository
 import br.eng.joaovictor.resort.repositories.InventoryRepository
+import br.eng.joaovictor.resort.repositories.NavigatorRepository
+import br.eng.joaovictor.resort.repositories.ShopRepository
+import br.eng.joaovictor.resort.repositories.WalletRepository
 import br.eng.joaovictor.resort.writeFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -214,7 +220,13 @@ class GameHost(
 
     // Repositories are created once with the host, so every screen shares the same snapshots.
     private val gateway: GameGateway = GameHostGateway(this)
+    val gameState = GameStateRepository(gateway, scope)
+    val wallet = WalletRepository(gateway, scope)
+    val buildMode = BuildModeRepository(gateway, gameState, scope)
+    val shop = ShopRepository(gateway, scope)
+    val navigator = NavigatorRepository(gateway, scope)
     val inventory = InventoryRepository(gateway, scope)
+    val hudCommands = HudRepository(gateway)
 
     fun hudToggleNavigator() = host.sendMessage("hud_toggle_navigator", ByteArray(0))
 

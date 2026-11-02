@@ -565,6 +565,46 @@ fn spawn_furniture_entity(
 
 /// Pointer for build mode: the mouse cursor, or the finger on a touch screen.
 /// Returns where it points and whether this frame confirms (mouse press, finger lifted).
+/// Tile of the walking surface hit by a ray (`None` when the ray is parallel to it or points away).
+pub fn ray_floor_tile(origin: Vec3, direction: Vec3) -> Option<(i32, i32)> {
+    if direction.y.abs() < 1e-6 {
+        return None;
+    }
+    let t = (FLOOR_TILE_TOP - origin.y) / direction.y;
+    if t < 0.0 {
+        return None;
+    }
+    let hit = origin + direction * t;
+    Some((hit.x.floor() as i32, hit.z.floor() as i32))
+}
+
+/// Every occupied tile must be floor, and a solid item cannot overlap another solid item.
+pub fn placement_valid(
+    occupied: &[(i32, i32)],
+    walkable: bool,
+    tile_exists: impl Fn(i32, i32) -> bool,
+    solid_at: impl Fn(i32, i32) -> bool,
+) -> bool {
+    occupied
+        .iter()
+        .all(|&(x, z)| tile_exists(x, z) && (walkable || !solid_at(x, z)))
+}
+
+/// Whether a solid placed item (other than `ignore`, the one being moved) covers the tile.
+pub fn solid_at(
+    furniture: &Query<&PlacedFurniture>,
+    tx: i32,
+    tz: i32,
+    ignore: Option<&str>,
+) -> bool {
+    furniture.iter().any(|f| {
+        if Some(f.item_id.as_str()) == ignore || f.walkable {
+            return false;
+        }
+        tx >= f.x && tx < f.x + f.width && tz >= f.z && tz < f.z + f.depth
+    })
+}
+
 fn build_pointer(
     window: &Window,
     mouse_button: &ButtonInput<MouseButton>,
@@ -659,59 +699,25 @@ fn handle_ghost_preview(
         return;
     };
 
-    // Intersect the walking surface plane
-    let plane_y = FLOOR_TILE_TOP;
-    let normal = Vec3::Y;
-    let denom = normal.dot(*ray.direction);
-
-    if denom.abs() < 1e-6 {
+    let Some((anchor_x, anchor_z)) = ray_floor_tile(ray.origin, *ray.direction) else {
         return;
-    }
-
-    let t = (plane_y - ray.origin.y) / ray.direction.y;
-    if t < 0.0 {
-        return;
-    }
-
-    let hit = ray.origin + *ray.direction * t;
-    let anchor_x = hit.x.floor() as i32;
-    let anchor_z = hit.z.floor() as i32;
+    };
 
     build_state.hovered_tile = Some((anchor_x, anchor_z));
 
     // Validate placement
     let occupied = calculate_occupied_tiles(anchor_x, anchor_z, width, depth);
-    let mut is_valid = true;
-
     let moving_item_id = if let BuildTool::Moving { item_id, .. } = &build_state.active_tool {
         Some(item_id.as_str())
     } else {
         None
     };
-
-    for &(tx, tz) in &occupied {
-        // Must be on a walkable floor tile
-        let tile_exists = tiles_query.iter().any(|tile| tile.x == tx && tile.z == tz);
-        if !tile_exists {
-            is_valid = false;
-            break;
-        }
-
-        // Solid items cannot overlap another solid item
-        if !walkable {
-            let overlaps_solid = furniture_query.iter().any(|f| {
-                if Some(f.item_id.as_str()) == moving_item_id || f.walkable {
-                    return false;
-                }
-                tx >= f.x && tx < f.x + f.width && tz >= f.z && tz < f.z + f.depth
-            });
-
-            if overlaps_solid {
-                is_valid = false;
-                break;
-            }
-        }
-    }
+    let is_valid = placement_valid(
+        &occupied,
+        walkable,
+        |tx, tz| tiles_query.iter().any(|tile| tile.x == tx && tile.z == tz),
+        |tx, tz| solid_at(&furniture_query, tx, tz, moving_item_id),
+    );
 
     build_state.is_valid_tile = is_valid;
 
@@ -1179,6 +1185,45 @@ fn spawn_furniture_context_menu(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_ray_hits_the_floor_tile_under_it() {
+        // Straight down from above tile (3, 5).
+        let top = crate::room::FLOOR_TILE_TOP;
+        assert_eq!(
+            ray_floor_tile(Vec3::new(3.4, top + 10.0, 5.9), Vec3::NEG_Y),
+            Some((3, 5))
+        );
+        // Slanted ray: 1 unit forward in +x per unit down.
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.5, top + 2.0, 0.5), Vec3::new(1.0, -1.0, 0.0)),
+            Some((2, 0))
+        );
+    }
+
+    #[test]
+    fn a_ray_that_cannot_reach_the_floor_gives_no_tile() {
+        let top = crate::room::FLOOR_TILE_TOP;
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.0, top + 1.0, 0.0), Vec3::X),
+            None
+        );
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.0, top + 1.0, 0.0), Vec3::Y),
+            None
+        );
+    }
+
+    #[test]
+    fn placement_needs_floor_and_no_solid_overlap() {
+        let floor = |x: i32, z: i32| (0..4).contains(&x) && (0..4).contains(&z);
+        let solid = |x: i32, z: i32| x == 1 && z == 1;
+        assert!(placement_valid(&[(0, 0), (0, 1)], false, floor, solid));
+        assert!(!placement_valid(&[(3, 3), (4, 3)], false, floor, solid)); // off the floor
+        assert!(!placement_valid(&[(1, 1)], false, floor, solid)); // on a solid item
+        assert!(placement_valid(&[(1, 1)], true, floor, solid)); // a rug may overlap
+        assert!(!placement_valid(&[(9, 9)], true, floor, solid)); // still needs floor
+    }
+
     use super::*;
 
     #[test]

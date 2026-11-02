@@ -13,6 +13,8 @@ import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.game.GameHost
+import br.eng.joaovictor.resort.views.hud.HudView
+import br.eng.joaovictor.resort.views.hud.HudViewModel
 import br.eng.joaovictor.resort.views.inventory.InventoryView
 import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
 
@@ -40,6 +42,13 @@ fun App(game: GameHost) {
                 val fps by game.fps.collectAsState()
                 ComposeHudTest(hud, fps, game::hudToggleNavigator)
             }
+            val hudViewModel = viewModel {
+                HudViewModel(
+                    game.gameState, game.wallet, game.buildMode, game.shop, game.navigator,
+                    game.inventory, game.hudCommands,
+                )
+            }
+            HudView(hudViewModel)
             val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
             InventoryView(inventoryViewModel)
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }

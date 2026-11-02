@@ -6,6 +6,7 @@ import br.eng.joaovictor.bevykmp.NativeBridge
 import br.eng.joaovictor.resort.game.GameHost
 import br.eng.joaovictor.resort.game.HostPaths
 import br.eng.joaovictor.resort.game.parseEnv
+import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
 
 /** Process-wide holder: the Bevy app outlives Activity recreation. */
@@ -71,3 +72,6 @@ internal actual fun writeFile(dir: String, name: String, bytes: ByteArray) {
     File(dir).mkdirs()
     File(dir, name).writeBytes(bytes)
 }
+
+internal actual fun loadImageFile(path: String): androidx.compose.ui.graphics.ImageBitmap? =
+    android.graphics.BitmapFactory.decodeFile(path)?.asImageBitmap()

@@ -63,6 +63,16 @@ class InventoryRepository(private val game: GameGateway, scope: CoroutineScope) 
     val state: StateFlow<InventoryState> = game.snapshots("inventory_state", InventoryState(), scope, ::parseInventory)
     fun setOpen(open: Boolean) = game.command("inventory_open", "open" to open)
     fun select(catalogId: String) = game.command("inventory_select", "catalog_id" to catalogId)
+
+    /** The item was dropped on the game surface at ([x], [y]) physical pixels (owner places it there). */
+    fun drop(catalogId: String, x: Float, y: Float) =
+        game.command("inventory_drop", "catalog_id" to catalogId, "x" to x, "y" to y)
+}
+
+/** HUD buttons that open bevy_hui windows with no Compose screen yet. */
+class HudRepository(private val game: GameGateway) {
+    fun toggleAvatarMenu() = game.send("hud_avatar_menu", "{}")
+    fun toggleRoomSettings() = game.send("hud_room_settings", "{}")
 }
 
 /** The room navigator (`navigator_state`): lists, search, joining and creating rooms. */

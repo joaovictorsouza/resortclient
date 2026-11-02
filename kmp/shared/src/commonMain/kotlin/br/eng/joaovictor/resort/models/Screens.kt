@@ -50,6 +50,8 @@ data class InventoryItem(
     val walkable: Boolean = false,
     val color: String = "",
     val assetId: String = "",
+    /** Local file of the thumbnail in the game's CDN cache; empty until it is downloaded. */
+    val thumbnail: String = "",
 )
 
 @Serializable

@@ -354,13 +354,25 @@ fn toggle_shop_from_hud(
     if !button.iter().any(|i| *i == Interaction::Pressed) {
         return;
     }
-    state.is_open = !state.is_open;
-    if state.is_open {
+    let open = !state.is_open;
+    set_shop_open(open, &mut state, &mut inventory, net.as_deref());
+}
+
+/// Opens or closes the shop; opening closes the inventory and fetches the catalog. Shared by the
+/// bevy_hui HUD button and the Compose shell's `shop_open`.
+pub fn set_shop_open(
+    open: bool,
+    state: &mut ShopState,
+    inventory: &mut PlayerInventoryState,
+    net: Option<&NakamaResource>,
+) {
+    state.is_open = open;
+    if open {
         inventory.is_open = false;
         state.is_loading = true;
         state.status = None;
         state.pending = None;
-        if let Some(net) = &net {
+        if let Some(net) = net {
             net.handle.send_command(NakamaCommand::FetchShopCatalog);
         }
     }

@@ -18,7 +18,10 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.usePinned
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.NSData
 import platform.Foundation.create
 import platform.Foundation.writeToFile
@@ -67,4 +70,11 @@ internal actual fun writeFile(dir: String, name: String, bytes: ByteArray) {
         NSData.create(bytes = pinned.addressOf(0), length = bytes.size.toULong())
             .writeToFile("$dir/$name", atomically = true)
     }
+}
+
+@OptIn(ExperimentalForeignApi::class)
+internal actual fun loadImageFile(path: String): androidx.compose.ui.graphics.ImageBitmap? {
+    val data = NSData.dataWithContentsOfFile(path) ?: return null
+    val bytes = data.bytes?.readBytes(data.length.toInt()) ?: return null
+    return runCatching { org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
 }

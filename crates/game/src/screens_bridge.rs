@@ -22,19 +22,25 @@
 //!
 //! The state stays server-authoritative: a command only does what the matching bevy_hui button does.
 
+use crate::cdn_assets::CdnAssets;
 use crate::character_creator::{
     CatalogItem, CharacterCatalog, CharacterCreatorState, CreatorCategory, apply_body_choice,
     apply_item_choice, creator_thumbnail_path, save_appearance,
 };
 use crate::config::GameConfig;
-use crate::furniture::{BuildModeState, BuildTool, PlayerInventoryState};
-use crate::inventory::{ComposeInventory, start_placing};
+use crate::furniture::{
+    BuildModeState, BuildTool, PlacedFurniture, PlayerInventoryState, calculate_occupied_tiles,
+    placement_valid, ray_floor_tile, solid_at,
+};
+use crate::inventory::{ComposeInventory, start_placing, thumbnail_path};
 use crate::navigator::{
-    ActiveInputFocus, ActiveRoomMetadata, FocusedInput, NavigatorTab, RoomNavigatorState,
+    ActiveInputFocus, ActiveRoomMetadata, ComposeHud, NavigatorTab, RoomNavigatorState,
+    RoomSettingsState, set_navigator_open, toggle_room_settings,
 };
 use crate::navigator_ui::{join_room, select_tab, start_search};
 use crate::net::NakamaResource;
-use crate::shop::{ShopState, ShopStatus, can_afford};
+use crate::room::{ActiveRoom, Tile};
+use crate::shop::{ShopState, ShopStatus, can_afford, set_shop_open};
 use crate::state::AppState;
 use crate::wallet::WalletState;
 use bevy::prelude::*;
@@ -44,6 +50,7 @@ use protocol::{
     AvatarAppearance, InventoryItemDto, RoomLayoutDto, RoomSummaryDto, ShopCategoryDto,
     ShopOfferDto,
 };
+use protocol::{ClientMessage, PlaceItemRequest};
 use serde::{Deserialize, Serialize};
 
 pub const EVT_SHOP: &str = "shop_state";
@@ -94,21 +101,50 @@ impl From<&ShopState> for ShopSnapshot {
     }
 }
 
+/// An inventory item plus the local file of its thumbnail (empty until the CDN cache has it).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct InventoryItemSnapshot {
+    #[serde(flatten)]
+    pub item: InventoryItemDto,
+    pub thumbnail: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InventorySnapshot {
     pub open: bool,
     pub loading: bool,
-    pub items: Vec<InventoryItemDto>,
+    pub items: Vec<InventoryItemSnapshot>,
     pub selected_catalog_id: Option<String>,
 }
 
-impl From<&PlayerInventoryState> for InventorySnapshot {
-    fn from(s: &PlayerInventoryState) -> Self {
+impl InventorySnapshot {
+    /// `thumbnail_file` maps a catalog id to the local path of its thumbnail ("" when not cached).
+    pub fn new(s: &PlayerInventoryState, thumbnail_file: impl Fn(&str) -> String) -> Self {
         Self {
             open: s.is_open,
             loading: s.is_loading,
-            items: s.items.clone(),
+            items: s
+                .items
+                .iter()
+                .map(|item| InventoryItemSnapshot {
+                    thumbnail: thumbnail_file(&item.catalog_id),
+                    item: item.clone(),
+                })
+                .collect(),
             selected_catalog_id: s.selected_catalog_id.clone(),
+        }
+    }
+}
+
+/// Local file of the thumbnail in the CDN cache; asks the sync thread for it when it is not there.
+fn cached_thumbnail(cdn: &CdnAssets, catalog_id: &str) -> String {
+    let logical = thumbnail_path(catalog_id);
+    let file = cdn.index.read().ok().and_then(|i| i.get(&logical).cloned());
+    match file {
+        Some(path) => path.to_string_lossy().into_owned(),
+        None => {
+            cdn.request(&logical);
+            String::new()
         }
     }
 }
@@ -275,6 +311,14 @@ struct BodyCmd {
     body_type: String,
 }
 
+/// `inventory_drop`: the item was dropped on the game surface at (`x`, `y`) physical pixels.
+#[derive(Deserialize, Debug, PartialEq)]
+struct DropCmd {
+    catalog_id: String,
+    x: f32,
+    y: f32,
+}
+
 fn parse<'a, T: Deserialize<'a>>(msg: &'a HostMessage) -> Option<T> {
     serde_json::from_slice(&msg.payload).ok()
 }
@@ -292,20 +336,24 @@ pub struct ScreensBridgePlugin;
 impl Plugin for ScreensBridgePlugin {
     fn build(&self, app: &mut App) {
         // The Compose inventory replaces the bevy_hui window.
-        app.insert_resource(ComposeInventory).add_systems(
-            Update,
-            (
-                publish_shop,
-                publish_inventory,
-                publish_navigator,
-                publish_creator,
-                shop_commands,
-                inventory_commands,
-                build_mode_commands,
-                navigator_commands,
-                creator_commands,
-            ),
-        );
+        app.insert_resource(ComposeInventory)
+            .insert_resource(ComposeHud)
+            .add_systems(
+                Update,
+                (
+                    publish_shop,
+                    publish_inventory,
+                    publish_navigator,
+                    publish_creator,
+                    shop_commands,
+                    inventory_commands,
+                    inventory_drop,
+                    hud_commands,
+                    build_mode_commands,
+                    navigator_commands,
+                    creator_commands,
+                ),
+            );
     }
 }
 
@@ -345,6 +393,7 @@ fn publish_shop(
 
 fn publish_inventory(
     inventory: Res<PlayerInventoryState>,
+    cdn: Option<Res<CdnAssets>>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<InventorySnapshot>>,
@@ -352,7 +401,11 @@ fn publish_inventory(
     publish(
         &outbox,
         EVT_INVENTORY,
-        InventorySnapshot::from(&*inventory),
+        InventorySnapshot::new(&inventory, |id| {
+            cdn.as_deref()
+                .map(|c| cached_thumbnail(c, id))
+                .unwrap_or_default()
+        }),
         resumed(&mut lifecycle),
         &mut last,
     );
@@ -394,6 +447,7 @@ fn publish_creator(
 fn shop_commands(
     mut messages: MessageReader<HostMessage>,
     mut shop: ResMut<ShopState>,
+    mut inventory: ResMut<PlayerInventoryState>,
     wallet: Res<WalletState>,
     net: Option<Res<NakamaResource>>,
 ) {
@@ -401,7 +455,8 @@ fn shop_commands(
         match msg.name.as_str() {
             "shop_open" => {
                 if let Some(c) = parse::<OpenCmd>(msg) {
-                    shop.is_open = c.open;
+                    // Same as the bevy_hui shop button: opening closes the inventory and fetches the catalog.
+                    set_shop_open(c.open, &mut shop, &mut inventory, net.as_deref());
                 }
             }
             "shop_category" => {
@@ -499,16 +554,14 @@ fn navigator_commands(
     mut nav: ResMut<RoomNavigatorState>,
     mut meta: ResMut<ActiveRoomMetadata>,
     mut focus: ResMut<ActiveInputFocus>,
+    mut settings: ResMut<RoomSettingsState>,
     net: Option<Res<NakamaResource>>,
 ) {
     for msg in messages.read() {
         match msg.name.as_str() {
             "navigator_open" => {
                 if let Some(c) = parse::<OpenCmd>(msg) {
-                    nav.is_open = c.open;
-                    if !c.open {
-                        focus.0 = FocusedInput::None;
-                    }
+                    set_navigator_open(c.open, &mut nav, &mut settings, &mut focus, net.as_deref());
                 }
             }
             "navigator_tab" => {
@@ -597,6 +650,97 @@ fn save_current(
     save_appearance(state, config, net, next_state);
 }
 
+/// Physical pixels of the surface (what the shell sends) to the logical pixels the game's camera uses.
+pub fn drop_to_logical(x: f32, y: f32, scale_factor: f32) -> Vec2 {
+    Vec2::new(x, y) / scale_factor.max(f32::EPSILON)
+}
+
+/// Drag and drop from the Compose inventory: places the item on the floor tile under the drop point,
+/// with the same rules as a normal placement (owner only, floor tiles, no solid overlap). An invalid
+/// drop does nothing and the item stays in the inventory.
+#[allow(clippy::too_many_arguments)]
+fn inventory_drop(
+    mut messages: MessageReader<HostMessage>,
+    windows: Query<&Window>,
+    cameras: Query<(&Camera, &GlobalTransform), With<crate::camera::MainRoomCamera>>,
+    tiles: Query<&Tile>,
+    furniture: Query<&PlacedFurniture>,
+    inventory: Res<PlayerInventoryState>,
+    room_meta: Option<Res<ActiveRoomMetadata>>,
+    net: Option<Res<NakamaResource>>,
+) {
+    for msg in messages.read() {
+        if msg.name != "inventory_drop" {
+            continue;
+        }
+        let Some(cmd) = parse::<DropCmd>(msg) else {
+            continue;
+        };
+        if !room_meta.as_ref().is_some_and(|m| m.is_owner) {
+            continue;
+        }
+        let (Ok(window), Ok((camera, camera_tf)), Some(net)) =
+            (windows.single(), cameras.single(), net.as_ref())
+        else {
+            continue;
+        };
+        let Some(item) = inventory
+            .items
+            .iter()
+            .find(|i| i.catalog_id == cmd.catalog_id && i.quantity > 0 && i.category != "pet")
+        else {
+            continue;
+        };
+        let pos = drop_to_logical(cmd.x, cmd.y, window.scale_factor());
+        let Some((x, z)) = camera
+            .viewport_to_world(camera_tf, pos)
+            .ok()
+            .and_then(|ray| ray_floor_tile(ray.origin, *ray.direction))
+        else {
+            continue;
+        };
+        let occupied = calculate_occupied_tiles(x, z, item.width, item.depth);
+        let valid = placement_valid(
+            &occupied,
+            item.walkable,
+            |tx, tz| tiles.iter().any(|t| t.x == tx && t.z == tz),
+            |tx, tz| solid_at(&furniture, tx, tz, None),
+        );
+        if valid {
+            net.handle
+                .send_command(NakamaCommand::SendMessage(ClientMessage::PlaceItem(
+                    PlaceItemRequest {
+                        catalog_id: item.catalog_id.clone(),
+                        x,
+                        z,
+                        rotation: 0,
+                    },
+                )));
+        }
+    }
+}
+
+/// HUD buttons that have no screen of their own: they do what the bevy_hui HUD buttons did.
+fn hud_commands(
+    mut messages: MessageReader<HostMessage>,
+    mut avatar_menu: ResMut<crate::avatar_menu::AvatarMenuState>,
+    mut settings: ResMut<RoomSettingsState>,
+    mut nav: ResMut<RoomNavigatorState>,
+    mut focus: ResMut<ActiveInputFocus>,
+    room: Res<ActiveRoom>,
+    meta: Res<ActiveRoomMetadata>,
+) {
+    for msg in messages.read() {
+        match msg.name.as_str() {
+            "hud_avatar_menu" => avatar_menu.is_open = !avatar_menu.is_open,
+            "hud_room_settings" if meta.is_owner => {
+                toggle_room_settings(&mut settings, &mut nav, &mut focus, &room, &meta)
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,5 +783,45 @@ mod tests {
         };
         let json = serde_json::to_string(&ShopSnapshot::from(&shop).status).unwrap();
         assert_eq!(json, r#"{"kind":"error","text":"x"}"#);
+    }
+
+    #[test]
+    fn inventory_items_carry_their_cached_thumbnail() {
+        let state = PlayerInventoryState {
+            items: vec![InventoryItemDto {
+                id: "i1".into(),
+                catalog_id: "chair".into(),
+                name: "Chair".into(),
+                category: "collider".into(),
+                quantity: 2,
+                width: 1,
+                depth: 1,
+                walkable: false,
+                color: String::new(),
+                asset_id: String::new(),
+            }],
+            ..Default::default()
+        };
+        let snap = InventorySnapshot::new(&state, |id| format!("/cache/{id}.png"));
+        let json = serde_json::to_value(&snap).unwrap();
+        assert_eq!(json["items"][0]["catalog_id"], "chair");
+        assert_eq!(json["items"][0]["thumbnail"], "/cache/chair.png");
+        assert_eq!(json["items"][0]["quantity"], 2);
+    }
+
+    #[test]
+    fn drop_command_parses_and_maps_to_logical_pixels() {
+        let cmd: DropCmd =
+            serde_json::from_str(r#"{"catalog_id":"chair","x":300.0,"y":150.0}"#).unwrap();
+        assert_eq!(
+            cmd,
+            DropCmd {
+                catalog_id: "chair".into(),
+                x: 300.0,
+                y: 150.0
+            }
+        );
+        assert_eq!(drop_to_logical(300.0, 150.0, 3.0), Vec2::new(100.0, 50.0));
+        assert_eq!(drop_to_logical(10.0, 10.0, 1.0), Vec2::new(10.0, 10.0));
     }
 }

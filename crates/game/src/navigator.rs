@@ -102,6 +102,10 @@ pub struct ActiveRoomMetadata {
 #[derive(Component)]
 pub struct HudRootNode;
 
+/// Present when the Compose shell draws the HUD: the bevy_hui HUD is not spawned then.
+#[derive(Resource)]
+pub struct ComposeHud;
+
 #[derive(Component)]
 pub struct HudRoomTitleText;
 
@@ -271,7 +275,11 @@ fn setup_hud(
     active_meta: Res<ActiveRoomMetadata>,
     ui_font: Res<UiFont>,
     asset_server: Res<AssetServer>,
+    compose_hud: Option<Res<ComposeHud>>,
 ) {
+    if compose_hud.is_some() {
+        return; // The Compose shell draws the HUD.
+    }
     let owner_display = if active_meta.is_owner {
         Display::Flex
     } else {
@@ -426,37 +434,69 @@ fn handle_hud_buttons(
 ) {
     for interaction in nav_btn_q.iter() {
         if *interaction == Interaction::Pressed {
-            {
-                nav_state.is_open = !nav_state.is_open;
-                focus.0 = FocusedInput::None;
-                if nav_state.is_open {
-                    settings_state.is_open = false;
-                    nav_state.is_loading_popular = true;
-                    if let Some(net) = &net {
-                        net.handle.send_command(NakamaCommand::FetchPopularRooms);
-                        net.handle.send_command(NakamaCommand::FetchMyRooms);
-                        net.handle.send_command(NakamaCommand::FetchRoomLayouts);
-                    }
-                }
-            }
+            let open = !nav_state.is_open;
+            set_navigator_open(
+                open,
+                &mut nav_state,
+                &mut settings_state,
+                &mut focus,
+                net.as_deref(),
+            );
         }
     }
 
     for interaction in edit_btn_q.iter() {
         if *interaction == Interaction::Pressed {
-            {
-                settings_state.is_open = !settings_state.is_open;
-                if settings_state.is_open {
-                    nav_state.is_open = false;
-                    settings_state.edited_name = active_room.name.clone();
-                    settings_state.edited_visibility = active_meta.visibility.clone();
-                    settings_state.is_confirming_delete = false;
-                    focus.0 = FocusedInput::SettingsRoomName;
-                } else {
-                    focus.0 = FocusedInput::None;
-                }
-            }
+            toggle_room_settings(
+                &mut settings_state,
+                &mut nav_state,
+                &mut focus,
+                &active_room,
+                &active_meta,
+            );
         }
+    }
+}
+
+/// Opens or closes the room navigator; opening closes the room settings and fetches the lists.
+/// Shared by the bevy_hui HUD button and the Compose shell's `navigator_open`.
+pub fn set_navigator_open(
+    open: bool,
+    nav_state: &mut RoomNavigatorState,
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    net: Option<&NakamaResource>,
+) {
+    nav_state.is_open = open;
+    focus.0 = FocusedInput::None;
+    if open {
+        settings_state.is_open = false;
+        nav_state.is_loading_popular = true;
+        if let Some(net) = net {
+            net.handle.send_command(NakamaCommand::FetchPopularRooms);
+            net.handle.send_command(NakamaCommand::FetchMyRooms);
+            net.handle.send_command(NakamaCommand::FetchRoomLayouts);
+        }
+    }
+}
+
+/// Toggles the room settings window (owner only for the Compose shell, which checks `is_owner`).
+pub fn toggle_room_settings(
+    settings_state: &mut RoomSettingsState,
+    nav_state: &mut RoomNavigatorState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    active_meta: &ActiveRoomMetadata,
+) {
+    settings_state.is_open = !settings_state.is_open;
+    if settings_state.is_open {
+        nav_state.is_open = false;
+        settings_state.edited_name = active_room.name.clone();
+        settings_state.edited_visibility = active_meta.visibility.clone();
+        settings_state.is_confirming_delete = false;
+        focus.0 = FocusedInput::SettingsRoomName;
+    } else {
+        focus.0 = FocusedInput::None;
     }
 }
 
