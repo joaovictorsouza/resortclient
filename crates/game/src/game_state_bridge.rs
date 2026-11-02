@@ -9,10 +9,9 @@
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
-//! - `full_screen_open`: `true` while a bevy_hui full-screen/modal screen is shown (shop, navigator, room settings,
-//!   avatar menu, doorbell popup, character creator); the shell hides its HUD meanwhile.
+//! - `full_screen_open`: `true` while a bevy_hui window is shown (shop, navigator, room settings, doorbell popup,
+//!   character creator); the shell hides its HUD meanwhile. The avatar menu is a small popup and does not count.
 
-use crate::avatar_menu::AvatarMenuState;
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::furniture::BuildModeState;
 use crate::navigator::{ActiveRoomMetadata, DoorbellState, RoomNavigatorState, RoomSettingsState};
@@ -50,7 +49,6 @@ pub struct OpenScreens {
     pub shop: bool,
     pub navigator: bool,
     pub room_settings: bool,
-    pub avatar_menu: bool,
     pub doorbell: bool,
 }
 
@@ -60,7 +58,6 @@ pub fn full_screen_open(state: AppState, screens: &OpenScreens) -> bool {
         || screens.shop
         || screens.navigator
         || screens.room_settings
-        || screens.avatar_menu
         || screens.doorbell
 }
 
@@ -148,7 +145,6 @@ struct SnapshotSources<'w> {
     shop: Res<'w, ShopState>,
     navigator: Res<'w, RoomNavigatorState>,
     settings: Res<'w, RoomSettingsState>,
-    avatar_menu: Res<'w, AvatarMenuState>,
     doorbell: Res<'w, DoorbellState>,
 }
 
@@ -163,7 +159,6 @@ fn publish_game_state(
         shop: src.shop.is_open,
         navigator: src.navigator.is_open,
         room_settings: src.settings.is_open,
-        avatar_menu: src.avatar_menu.is_open,
         doorbell: src.doorbell.incoming_request.is_some(),
     };
     let snap = snapshot_with(
@@ -297,7 +292,7 @@ mod tests {
     }
 
     #[test]
-    fn each_bevy_hui_screen_counts_as_full_screen() {
+    fn each_bevy_hui_window_counts_as_full_screen_but_not_the_avatar_popup() {
         let none = OpenScreens::default();
         assert!(!full_screen_open(AppState::InRoom, &none));
         assert!(full_screen_open(AppState::CharacterCreator, &none));
@@ -309,7 +304,6 @@ mod tests {
         assert!(one(|s| s.shop = true));
         assert!(one(|s| s.navigator = true));
         assert!(one(|s| s.room_settings = true));
-        assert!(one(|s| s.avatar_menu = true));
         assert!(one(|s| s.doorbell = true));
     }
 
