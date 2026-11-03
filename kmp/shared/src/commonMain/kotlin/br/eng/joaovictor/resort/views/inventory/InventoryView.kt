@@ -66,6 +66,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.eng.joaovictor.resort.components.GameThumbnail
 import br.eng.joaovictor.resort.components.GameWindow
 import br.eng.joaovictor.resort.components.SearchSection
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
@@ -338,17 +339,8 @@ private fun ItemTile(
     }
 }
 
-/** The cached thumbnail, decoded off the main thread; a neutral square while it is not available. */
 @Composable
-private fun Thumbnail(row: InventoryRow, modifier: Modifier) {
-    val load = LocalThumbnailLoader.current
-    val image: ImageBitmap? by produceState<ImageBitmap?>(null, row.thumbnail, load) {
-        value = if (row.thumbnail.isEmpty()) null else withContext(Dispatchers.Default) { load(row.thumbnail) }
-    }
-    Box(modifier.background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-        image?.let { Image(it, row.name, Modifier.fillMaxSize().padding(2.dp)) }
-    }
-}
+private fun Thumbnail(row: InventoryRow, modifier: Modifier) = GameThumbnail(row.thumbnail, row.name, modifier)
 
 // ---- Previews (IDE only; see ai-docs/process/previews-compose.md) ----
 

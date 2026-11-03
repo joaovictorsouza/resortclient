@@ -13,13 +13,15 @@ import androidx.compose.ui.Modifier
 import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import br.eng.joaovictor.resort.components.LocalThumbnailLoader
 import br.eng.joaovictor.resort.game.GameHost
 import br.eng.joaovictor.resort.views.hud.HudView
 import br.eng.joaovictor.resort.views.hud.LocalHudVisibility
 import br.eng.joaovictor.resort.views.hud.HudViewModel
 import br.eng.joaovictor.resort.views.inventory.InventoryView
-import br.eng.joaovictor.resort.views.inventory.LocalThumbnailLoader
 import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
+import br.eng.joaovictor.resort.views.shop.ShopView
+import br.eng.joaovictor.resort.views.shop.ShopViewModel
 
 /**
  * The whole screen is the Bevy view: the game's UI is still bevy_hui. Native screens (the
@@ -58,6 +60,8 @@ fun App(game: GameHost) {
                 HudView(hudViewModel)
                 val inventoryViewModel = viewModel { InventoryViewModel(game.inventory) }
                 InventoryView(inventoryViewModel)
+                val shopViewModel = viewModel { ShopViewModel(game.shop, game.wallet) }
+                ShopView(shopViewModel)
             }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }

@@ -22,6 +22,8 @@ data class ShopOffer(
     val walkable: Boolean = false,
     val priceSilver: Long = 0,
     val priceGold: Long = 0,
+    /** Local file of the thumbnail in the game's CDN cache; empty until it is downloaded. */
+    val thumbnail: String = "",
 )
 
 @Serializable

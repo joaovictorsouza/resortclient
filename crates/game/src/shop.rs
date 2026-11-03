@@ -223,6 +223,10 @@ pub struct ShopState {
     pub status: Option<ShopStatus>,
 }
 
+/// Present when the Compose shell draws the shop: the bevy_hui window is not spawned then.
+#[derive(Resource)]
+pub struct ComposeShop;
+
 /// HUD button that opens the shop.
 #[derive(Component)]
 pub struct HudShopBtn;
@@ -513,6 +517,7 @@ fn sync_shop_window(
     mut icons: Query<(&UiId, &mut ImageNode, &mut Visibility)>,
     mut needs_fill: Local<bool>,
     mut last_view: Local<(Option<String>, String)>,
+    compose: Option<Res<ComposeShop>>,
 ) {
     let Some(templates) = templates else { return };
 
@@ -527,6 +532,9 @@ fn sync_shop_window(
             state.pending = None;
         }
         return;
+    }
+    if compose.is_some() {
+        return; // The Compose shell draws the shop window.
     }
 
     if safe_area.is_changed() || ui_scale.is_changed() {

@@ -37,7 +37,7 @@ use crate::navigator::{
 use crate::navigator_ui::{join_room, select_tab, start_search};
 use crate::net::NakamaResource;
 use crate::room::ActiveRoom;
-use crate::shop::{ShopState, ShopStatus, can_afford, set_shop_open};
+use crate::shop::{ComposeShop, ShopState, ShopStatus, can_afford, set_shop_open};
 use crate::state::AppState;
 use crate::wallet::WalletState;
 use bevy::prelude::*;
@@ -64,25 +64,41 @@ pub struct StatusLine {
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// A shop offer plus the local file of its thumbnail (empty until the CDN cache has it).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ShopOfferSnapshot {
+    #[serde(flatten)]
+    pub offer: ShopOfferDto,
+    pub thumbnail: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ShopSnapshot {
     pub open: bool,
     pub loading: bool,
     pub categories: Vec<ShopCategoryDto>,
-    pub offers: Vec<ShopOfferDto>,
+    pub offers: Vec<ShopOfferSnapshot>,
     pub selected_category: Option<String>,
     pub query: String,
     pub pending: Option<String>,
     pub status: Option<StatusLine>,
 }
 
-impl From<&ShopState> for ShopSnapshot {
-    fn from(s: &ShopState) -> Self {
+impl ShopSnapshot {
+    /// `thumbnail_file` maps a catalog id to the local path of its thumbnail ("" when not cached).
+    pub fn new(s: &ShopState, thumbnail_file: impl Fn(&str) -> String) -> Self {
         Self {
             open: s.is_open,
             loading: s.is_loading,
             categories: s.categories.clone(),
-            offers: s.offers.clone(),
+            offers: s
+                .offers
+                .iter()
+                .map(|offer| ShopOfferSnapshot {
+                    thumbnail: thumbnail_file(&offer.catalog_id),
+                    offer: offer.clone(),
+                })
+                .collect(),
             selected_category: s.selected_category.clone(),
             query: s.query.clone(),
             pending: s.pending.clone(),
@@ -97,7 +113,6 @@ impl From<&ShopState> for ShopSnapshot {
     }
 }
 
-/// An inventory item plus the local file of its thumbnail (empty until the CDN cache has it).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct InventoryItemSnapshot {
     #[serde(flatten)]
@@ -342,6 +357,7 @@ impl Plugin for ScreensBridgePlugin {
         // The Compose inventory replaces the bevy_hui window.
         app.insert_resource(ComposeInventory)
             .insert_resource(ComposeHud)
+            .insert_resource(ComposeShop)
             .add_systems(
                 Update,
                 (
@@ -382,6 +398,7 @@ fn resumed(lifecycle: &mut MessageReader<HostLifecycle>) -> bool {
 
 fn publish_shop(
     shop: Res<ShopState>,
+    cdn: Option<Res<CdnAssets>>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<ShopSnapshot>>,
@@ -389,7 +406,11 @@ fn publish_shop(
     publish(
         &outbox,
         EVT_SHOP,
-        ShopSnapshot::from(&*shop),
+        ShopSnapshot::new(&shop, |id| {
+            cdn.as_deref()
+                .map(|c| cached_thumbnail(c, id))
+                .unwrap_or_default()
+        }),
         resumed(&mut lifecycle),
         &mut last,
     );
@@ -822,7 +843,8 @@ mod tests {
             status: Some(ShopStatus::Error("x".into())),
             ..Default::default()
         };
-        let json = serde_json::to_string(&ShopSnapshot::from(&shop).status).unwrap();
+        let json =
+            serde_json::to_string(&ShopSnapshot::new(&shop, |_| String::new()).status).unwrap();
         assert_eq!(json, r#"{"kind":"error","text":"x"}"#);
     }
 
@@ -874,6 +896,28 @@ mod tests {
         );
         assert_eq!(drop_to_logical(300.0, 150.0, 3.0), Vec2::new(100.0, 50.0));
         assert_eq!(drop_to_logical(10.0, 10.0, 1.0), Vec2::new(10.0, 10.0));
+    }
+
+    #[test]
+    fn shop_offers_carry_their_cached_thumbnail() {
+        let state = ShopState {
+            offers: vec![ShopOfferDto {
+                catalog_id: "chair".into(),
+                category_id: "c".into(),
+                name: "Chair".into(),
+                width: 1,
+                depth: 1,
+                walkable: false,
+                price_silver: 5,
+                price_gold: 0,
+            }],
+            ..Default::default()
+        };
+        let snap = ShopSnapshot::new(&state, |id| format!("/cache/{id}.png"));
+        let json = serde_json::to_value(&snap).unwrap();
+        assert_eq!(json["offers"][0]["catalog_id"], "chair");
+        assert_eq!(json["offers"][0]["thumbnail"], "/cache/chair.png");
+        assert_eq!(json["offers"][0]["price_silver"], 5);
     }
 
     fn drag_app(owner: bool) -> App {
