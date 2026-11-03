@@ -8,7 +8,9 @@ import br.eng.joaovictor.resort.models.NavigatorState
 import br.eng.joaovictor.resort.models.ShopState
 import br.eng.joaovictor.resort.models.parseCreator
 import br.eng.joaovictor.resort.models.parseInventory
+import br.eng.joaovictor.resort.models.RoomUiState
 import br.eng.joaovictor.resort.models.parseNavigator
+import br.eng.joaovictor.resort.models.parseRoomUi
 import br.eng.joaovictor.resort.models.parseShop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.SharingStarted
@@ -90,6 +92,27 @@ class NavigatorRepository(private val game: GameGateway, scope: CoroutineScope) 
     fun join(roomId: String) = game.command("navigator_join", "room_id" to roomId)
     fun create(name: String, layoutId: String? = null) =
         game.command("navigator_create", "name" to name, "layout_id" to layoutId)
+}
+
+/** The in-room popups (`room_ui_state`): avatar menu, room settings (owner) and the doorbell (owner). */
+class RoomUiRepository(private val game: GameGateway, scope: CoroutineScope) {
+    val state: StateFlow<RoomUiState> = game.snapshots("room_ui_state", RoomUiState(), scope, ::parseRoomUi)
+
+    fun closeAvatarMenu() = game.send("avatar_menu_close", "{}")
+    fun visuals() = game.send("avatar_visuals", "{}")
+    fun signOut() = game.send("avatar_sign_out", "{}")
+
+    fun settingsName(text: String) = game.command("settings_name", "text" to text)
+
+    /** `public|hidden|private` */
+    fun settingsVisibility(visibility: String) = game.command("settings_visibility", "visibility" to visibility)
+    fun settingsSave() = game.send("settings_save", "{}")
+    fun settingsAskDelete() = game.send("settings_delete_ask", "{}")
+    fun settingsCancelDelete() = game.send("settings_delete_cancel", "{}")
+    fun settingsConfirmDelete() = game.send("settings_delete_confirm", "{}")
+    fun settingsClose() = game.send("settings_close", "{}")
+    fun answerDoorbell(requestId: String, allowed: Boolean) =
+        game.command("doorbell_answer", "request_id" to requestId, "allowed" to allowed)
 }
 
 /**

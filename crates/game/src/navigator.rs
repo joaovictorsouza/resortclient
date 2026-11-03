@@ -102,6 +102,11 @@ pub struct ActiveRoomMetadata {
 #[derive(Component)]
 pub struct HudRootNode;
 
+/// Present when the Compose shell draws the in-room popups (avatar menu, room settings, doorbell): the
+/// bevy_hui versions are not spawned then.
+#[derive(Resource)]
+pub struct ComposeRoomUi;
+
 /// Present when the Compose shell draws the HUD: the bevy_hui HUD is not spawned then.
 #[derive(Resource)]
 pub struct ComposeHud;
@@ -525,7 +530,11 @@ fn render_settings_overlay(
     safe_area: Res<SafeArea>,
     ui_scale: Res<UiScale>,
     asset_server: Res<AssetServer>,
+    compose: Option<Res<ComposeRoomUi>>,
 ) {
+    if compose.is_some() {
+        return; // The Compose shell draws the room settings.
+    }
     if !settings_state.is_changed()
         && !focus.is_changed()
         && !safe_area.is_changed()
@@ -902,11 +911,22 @@ fn respond_to_doorbell(
     let Some(request_id) = tags.get(entity).ok().and_then(|t| t.get("request_id")) else {
         return;
     };
-    if let Some(net) = &net {
+    answer_doorbell(request_id, allowed, &mut doorbell_state, net.as_deref());
+}
+
+/// Answers a visitor's doorbell request (the owner lets them in or not) and clears the popup. Shared by
+/// the bevy_hui popup and the Compose shell's `doorbell_answer`.
+pub fn answer_doorbell(
+    request_id: &str,
+    allowed: bool,
+    doorbell_state: &mut DoorbellState,
+    net: Option<&NakamaResource>,
+) {
+    if let Some(net) = net {
         net.handle
             .send_command(NakamaCommand::SendMessage(ClientMessage::DoorbellResponse(
                 DoorbellResponse {
-                    request_id: request_id.clone(),
+                    request_id: request_id.to_string(),
                     allowed,
                 },
             )));
@@ -919,8 +939,12 @@ fn render_doorbell_popup(
     doorbell_state: Res<DoorbellState>,
     template: Option<Res<DoorbellTemplate>>,
     existing: Query<Entity, With<DoorbellPopupRoot>>,
+    compose: Option<Res<ComposeRoomUi>>,
 ) {
     let Some(template) = template else { return };
+    if compose.is_some() {
+        return; // The Compose shell draws the doorbell popup.
+    }
     if !doorbell_state.is_changed() && !template.is_added() {
         return;
     }
@@ -1012,29 +1036,15 @@ fn handle_settings_interactions(
     }
 
     for interaction in save_q.iter_mut() {
-        if *interaction == Interaction::Pressed
-            && let Some(net) = &net
-        {
-            let name = if settings_state.edited_name.trim().is_empty() {
-                active_room.name.clone()
-            } else {
-                settings_state.edited_name.trim().to_string()
-            };
-            active_meta.visibility = settings_state.edited_visibility.clone();
-            active_meta.room_name = name.clone();
-            for r in &mut nav_state.my_rooms {
-                if r.room_id == active_room.id {
-                    r.name = name.clone();
-                    r.visibility = settings_state.edited_visibility.clone();
-                }
-            }
-            net.handle.send_command(NakamaCommand::UpdateRoom {
-                room_id: active_room.id.clone(),
-                name,
-                visibility: settings_state.edited_visibility.clone(),
-            });
-            settings_state.is_open = false;
-            focus.0 = FocusedInput::None;
+        if *interaction == Interaction::Pressed {
+            save_room_settings(
+                &mut settings_state,
+                &mut focus,
+                &active_room,
+                &mut active_meta,
+                &mut nav_state,
+                net.as_deref(),
+            );
         }
     }
 
@@ -1051,18 +1061,65 @@ fn handle_settings_interactions(
     }
 
     for interaction in confirm_q.iter_mut() {
-        if *interaction == Interaction::Pressed
-            && let Some(net) = &net
-        {
-            info!("Confirming room deletion for: {}", active_room.id);
-            net.handle.send_command(NakamaCommand::DeleteRoom {
-                room_id: active_room.id.clone(),
-            });
-            settings_state.is_open = false;
-            settings_state.is_confirming_delete = false;
-            focus.0 = FocusedInput::None;
+        if *interaction == Interaction::Pressed {
+            confirm_room_deletion(
+                &mut settings_state,
+                &mut focus,
+                &active_room,
+                net.as_deref(),
+            );
         }
     }
+}
+
+/// Saves the edited name and visibility of the room (optimistically in the local copies) and closes the
+/// settings. Shared by the bevy_hui button and the Compose shell's `settings_save`.
+pub fn save_room_settings(
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    active_meta: &mut ActiveRoomMetadata,
+    nav_state: &mut RoomNavigatorState,
+    net: Option<&NakamaResource>,
+) {
+    let Some(net) = net else { return };
+    let name = if settings_state.edited_name.trim().is_empty() {
+        active_room.name.clone()
+    } else {
+        settings_state.edited_name.trim().to_string()
+    };
+    active_meta.visibility = settings_state.edited_visibility.clone();
+    active_meta.room_name = name.clone();
+    for r in &mut nav_state.my_rooms {
+        if r.room_id == active_room.id {
+            r.name = name.clone();
+            r.visibility = settings_state.edited_visibility.clone();
+        }
+    }
+    net.handle.send_command(NakamaCommand::UpdateRoom {
+        room_id: active_room.id.clone(),
+        name,
+        visibility: settings_state.edited_visibility.clone(),
+    });
+    settings_state.is_open = false;
+    focus.0 = FocusedInput::None;
+}
+
+/// Deletes the active room (the server sends everybody back to the lobby) and closes the settings.
+pub fn confirm_room_deletion(
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    net: Option<&NakamaResource>,
+) {
+    let Some(net) = net else { return };
+    info!("Confirming room deletion for: {}", active_room.id);
+    net.handle.send_command(NakamaCommand::DeleteRoom {
+        room_id: active_room.id.clone(),
+    });
+    settings_state.is_open = false;
+    settings_state.is_confirming_delete = false;
+    focus.0 = FocusedInput::None;
 }
 
 #[allow(clippy::too_many_arguments)]

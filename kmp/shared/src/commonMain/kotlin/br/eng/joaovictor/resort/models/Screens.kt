@@ -111,6 +111,22 @@ data class NavigatorState(
     val status: String? = null,
 )
 
+// ---- In-room popups (`room_ui_state`) ----
+
+@Serializable
+data class SettingsInfo(val name: String = "", val visibility: String = "public", val confirmingDelete: Boolean = false)
+
+@Serializable
+data class DoorbellInfo(val requestId: String = "", val requesterName: String = "")
+
+/** The small popups the shell draws inside a room: avatar menu, room settings and the doorbell. */
+@Serializable
+data class RoomUiState(
+    val avatarMenu: Boolean = false,
+    val settings: SettingsInfo? = null,
+    val doorbell: DoorbellInfo? = null,
+)
+
 // ---- Character creator (`creator_state`) ----
 
 @Serializable
@@ -166,4 +182,5 @@ data class CreatorState(
 fun parseShop(json: String): ShopState? = BevyJson.decodeOrNull<ShopState>(json)
 fun parseInventory(json: String): InventoryState? = BevyJson.decodeOrNull<InventoryState>(json)
 fun parseNavigator(json: String): NavigatorState? = BevyJson.decodeOrNull<NavigatorState>(json)
+fun parseRoomUi(json: String): RoomUiState? = BevyJson.decodeOrNull<RoomUiState>(json)
 fun parseCreator(json: String): CreatorState? = BevyJson.decodeOrNull<CreatorState>(json)

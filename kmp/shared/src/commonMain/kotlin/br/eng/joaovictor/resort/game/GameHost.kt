@@ -26,6 +26,7 @@ import br.eng.joaovictor.resort.repositories.GameStateRepository
 import br.eng.joaovictor.resort.repositories.HudRepository
 import br.eng.joaovictor.resort.repositories.InventoryRepository
 import br.eng.joaovictor.resort.repositories.NavigatorRepository
+import br.eng.joaovictor.resort.repositories.RoomUiRepository
 import br.eng.joaovictor.resort.repositories.ShopRepository
 import br.eng.joaovictor.resort.repositories.WalletRepository
 import br.eng.joaovictor.resort.views.hud.HudVisibility
@@ -228,6 +229,7 @@ class GameHost(
     val shop = ShopRepository(gateway, scope)
     val navigator = NavigatorRepository(gateway, scope)
     val creator = CreatorRepository(gateway, scope)
+    val roomUi = RoomUiRepository(gateway, scope)
     val inventory = InventoryRepository(gateway, scope)
     val hudCommands = HudRepository(gateway)
 

@@ -4,6 +4,8 @@ import br.eng.joaovictor.resort.OnboardingStage
 import br.eng.joaovictor.resort.views.hud.HudUiState
 import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.InventoryRow
+import br.eng.joaovictor.resort.models.DoorbellInfo
+import br.eng.joaovictor.resort.models.SettingsInfo
 import br.eng.joaovictor.resort.models.ShopCategory
 import br.eng.joaovictor.resort.views.inventory.InventoryUiState
 import br.eng.joaovictor.resort.views.creator.CreatorOption
@@ -123,6 +125,9 @@ internal object PreviewData {
         swatches = emptyList(),
         options = listOf(CreatorOption("female", "Feminino", "", selected = true), CreatorOption("male", "Masculino", "", selected = false)),
     )
+
+    val roomSettings = SettingsInfo(name = "Casa do João", visibility = "hidden")
+    val doorbell = DoorbellInfo(requestId = "r1", requesterName = "Ana")
 
     val onboardingLogin = OnboardingStage(stage = "login")
     val onboardingNickname = OnboardingStage(stage = "nickname")

@@ -32,8 +32,9 @@ use crate::config::GameConfig;
 use crate::furniture::{BuildModeState, BuildTool, ExternalPointer, PlayerInventoryState};
 use crate::inventory::{ComposeInventory, begin_placing, start_placing, thumbnail_path};
 use crate::navigator::{
-    ActiveInputFocus, ActiveRoomMetadata, ComposeHud, NavigatorTab, RoomNavigatorState,
-    RoomSettingsState, set_navigator_open, toggle_room_settings,
+    ActiveInputFocus, ActiveRoomMetadata, ComposeHud, ComposeRoomUi, DoorbellState, FocusedInput,
+    NavigatorTab, RoomNavigatorState, RoomSettingsState, answer_doorbell, confirm_room_deletion,
+    save_room_settings, set_navigator_open, toggle_room_settings,
 };
 use crate::navigator_ui::{ComposeNavigator, PUBLIC_SPACES, join_room, select_tab, start_search};
 use crate::net::NakamaResource;
@@ -53,6 +54,7 @@ use serde::{Deserialize, Serialize};
 pub const EVT_SHOP: &str = "shop_state";
 pub const EVT_INVENTORY: &str = "inventory_state";
 pub const EVT_NAVIGATOR: &str = "navigator_state";
+pub const EVT_ROOM_UI: &str = "room_ui_state";
 pub const EVT_CREATOR: &str = "creator_state";
 
 // ---------------------------------------------------------------------------
@@ -341,6 +343,51 @@ pub fn creator_snapshot(
     }
 }
 
+/// The room settings window while it is open.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SettingsSnapshot {
+    pub name: String,
+    pub visibility: String,
+    pub confirming_delete: bool,
+}
+
+/// A visitor ringing the doorbell of the player's room.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DoorbellSnapshot {
+    pub request_id: String,
+    pub requester_name: String,
+}
+
+/// The small in-room popups the Compose shell draws: avatar menu, room settings and the doorbell.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RoomUiSnapshot {
+    pub avatar_menu: bool,
+    pub settings: Option<SettingsSnapshot>,
+    pub doorbell: Option<DoorbellSnapshot>,
+}
+
+pub fn room_ui_snapshot(
+    avatar_menu_open: bool,
+    settings: &RoomSettingsState,
+    doorbell: &DoorbellState,
+) -> RoomUiSnapshot {
+    RoomUiSnapshot {
+        avatar_menu: avatar_menu_open,
+        settings: settings.is_open.then(|| SettingsSnapshot {
+            name: settings.edited_name.clone(),
+            visibility: settings.edited_visibility.clone(),
+            confirming_delete: settings.is_confirming_delete,
+        }),
+        doorbell: doorbell
+            .incoming_request
+            .as_ref()
+            .map(|r| DoorbellSnapshot {
+                request_id: r.request_id.clone(),
+                requester_name: r.requester_name.clone(),
+            }),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -381,6 +428,19 @@ struct CreateRoomCmd {
 #[derive(Deserialize)]
 struct CategoryCmd {
     category: String,
+}
+#[derive(Deserialize)]
+struct TextCmd {
+    text: String,
+}
+#[derive(Deserialize)]
+struct VisibilityCmd {
+    visibility: String,
+}
+#[derive(Deserialize)]
+struct DoorbellCmd {
+    request_id: String,
+    allowed: bool,
 }
 #[derive(Deserialize)]
 struct HexCmd {
@@ -426,6 +486,7 @@ impl Plugin for ScreensBridgePlugin {
             .insert_resource(ComposeShop)
             .insert_resource(ComposeNavigator)
             .insert_resource(ComposeCreator)
+            .insert_resource(ComposeRoomUi)
             .add_systems(
                 Update,
                 (
@@ -437,6 +498,8 @@ impl Plugin for ScreensBridgePlugin {
                     inventory_commands,
                     inventory_drag,
                     hud_commands,
+                    publish_room_ui,
+                    room_ui_commands,
                     build_mode_commands,
                     navigator_commands,
                     creator_commands,
@@ -907,6 +970,99 @@ fn hud_commands(
     }
 }
 
+fn publish_room_ui(
+    menu: Res<crate::avatar_menu::AvatarMenuState>,
+    settings: Res<RoomSettingsState>,
+    doorbell: Res<DoorbellState>,
+    mut lifecycle: MessageReader<HostLifecycle>,
+    outbox: Res<Outbox>,
+    mut last: Local<Option<RoomUiSnapshot>>,
+) {
+    publish(
+        &outbox,
+        EVT_ROOM_UI,
+        room_ui_snapshot(menu.is_open, &settings, &doorbell),
+        resumed(&mut lifecycle),
+        &mut last,
+    );
+}
+
+/// Visibility values the room settings accept (the bevy_hui buttons offer exactly these).
+fn valid_visibility(value: &str) -> bool {
+    matches!(value, "public" | "hidden" | "private")
+}
+
+/// Commands of the Compose avatar menu, room settings and doorbell popup: each does what the matching
+/// bevy_hui button did. Settings and the doorbell are the owner's; the server validates again.
+#[allow(clippy::too_many_arguments)]
+fn room_ui_commands(
+    mut messages: MessageReader<HostMessage>,
+    mut commands: Commands,
+    mut avatar_menu: ResMut<crate::avatar_menu::AvatarMenuState>,
+    mut creator: ResMut<CharacterCreatorState>,
+    mut config: ResMut<GameConfig>,
+    mut next_state: ResMut<NextState<AppState>>,
+    mut settings: ResMut<RoomSettingsState>,
+    mut focus: ResMut<ActiveInputFocus>,
+    room: Res<ActiveRoom>,
+    mut meta: ResMut<ActiveRoomMetadata>,
+    mut nav: ResMut<RoomNavigatorState>,
+    mut doorbell: ResMut<DoorbellState>,
+    net: Option<Res<NakamaResource>>,
+) {
+    for msg in messages.read() {
+        match msg.name.as_str() {
+            "avatar_menu_close" => avatar_menu.is_open = false,
+            "avatar_visuals" => {
+                crate::avatar_menu::open_visuals(&mut avatar_menu, &mut creator, &mut next_state)
+            }
+            "avatar_sign_out" => crate::avatar_menu::sign_out_to_login(
+                &mut commands,
+                &mut avatar_menu,
+                &mut config,
+                &mut next_state,
+            ),
+            _ if !meta.is_owner => {}
+            "settings_name" => {
+                if let Some(c) = parse::<TextCmd>(msg) {
+                    settings.edited_name = crate::navigator_ui::clamp_name(&c.text);
+                }
+            }
+            "settings_visibility" => {
+                if let Some(c) =
+                    parse::<VisibilityCmd>(msg).filter(|c| valid_visibility(&c.visibility))
+                {
+                    settings.edited_visibility = c.visibility;
+                }
+            }
+            "settings_save" if settings.is_open => save_room_settings(
+                &mut settings,
+                &mut focus,
+                &room,
+                &mut meta,
+                &mut nav,
+                net.as_deref(),
+            ),
+            "settings_delete_ask" if settings.is_open => settings.is_confirming_delete = true,
+            "settings_delete_cancel" => settings.is_confirming_delete = false,
+            "settings_delete_confirm" if settings.is_open && settings.is_confirming_delete => {
+                confirm_room_deletion(&mut settings, &mut focus, &room, net.as_deref())
+            }
+            "settings_close" => {
+                settings.is_open = false;
+                settings.is_confirming_delete = false;
+                focus.0 = FocusedInput::None;
+            }
+            "doorbell_answer" => {
+                if let Some(c) = parse::<DoorbellCmd>(msg) {
+                    answer_doorbell(&c.request_id, c.allowed, &mut doorbell, net.as_deref());
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1149,5 +1305,46 @@ mod tests {
         drag(&mut app, "move");
         assert!(!app.world().resource::<BuildModeState>().is_active);
         assert!(app.world().resource::<ExternalPointer>().position.is_none());
+    }
+
+    #[test]
+    fn the_room_ui_snapshot_reports_the_popups_that_are_open() {
+        let closed = room_ui_snapshot(
+            false,
+            &RoomSettingsState::default(),
+            &DoorbellState::default(),
+        );
+        assert!(!closed.avatar_menu && closed.settings.is_none() && closed.doorbell.is_none());
+
+        let settings = RoomSettingsState {
+            is_open: true,
+            edited_name: "Casa".into(),
+            edited_visibility: "hidden".into(),
+            is_confirming_delete: true,
+            error_message: None,
+        };
+        let doorbell = DoorbellState {
+            incoming_request: Some(protocol::DoorbellRequest {
+                request_id: "r1".into(),
+                requester_id: "u1".into(),
+                requester_name: "Ana".into(),
+            }),
+            ..Default::default()
+        };
+        let open = room_ui_snapshot(true, &settings, &doorbell);
+        assert!(open.avatar_menu);
+        assert_eq!(open.settings.as_ref().unwrap().visibility, "hidden");
+        assert!(open.settings.as_ref().unwrap().confirming_delete);
+        assert_eq!(open.doorbell.as_ref().unwrap().requester_name, "Ana");
+        let json = serde_json::to_value(&open).unwrap();
+        assert_eq!(json["doorbell"]["request_id"], "r1");
+    }
+
+    #[test]
+    fn only_the_known_visibilities_are_accepted() {
+        assert!(
+            valid_visibility("public") && valid_visibility("hidden") && valid_visibility("private")
+        );
+        assert!(!valid_visibility("") && !valid_visibility("everyone"));
     }
 }
