@@ -9,12 +9,12 @@
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
-//! - `full_screen_open`: `true` while a big bevy_hui window is shown (navigator, room settings, character
-//!   creator; the shop is Compose now); the shell hides its HUD meanwhile. Small popups over the scene (avatar menu, doorbell) do not count.
+//! - `full_screen_open`: `true` while a big bevy_hui window is shown (room settings, character creator; the
+//!   shop and the navigator are Compose now); the shell hides its HUD meanwhile. Small popups over the scene (avatar menu, doorbell) do not count.
 
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::furniture::BuildModeState;
-use crate::navigator::{ActiveRoomMetadata, RoomNavigatorState, RoomSettingsState};
+use crate::navigator::{ActiveRoomMetadata, RoomSettingsState};
 use crate::room::ActiveRoom;
 use crate::state::AppState;
 use bevy::ecs::system::SystemParam;
@@ -46,13 +46,12 @@ pub struct GameStateSnapshot {
 /// avatar menu and the doorbell are small popups over the scene and do not hide the HUD.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct OpenScreens {
-    pub navigator: bool,
     pub room_settings: bool,
 }
 
 /// A full-screen or modal bevy_hui screen is shown, so the shell's HUD must get out of its way.
 pub fn full_screen_open(state: AppState, screens: &OpenScreens) -> bool {
-    state == AppState::CharacterCreator || screens.navigator || screens.room_settings
+    state == AppState::CharacterCreator || screens.room_settings
 }
 
 pub fn app_name(state: AppState) -> &'static str {
@@ -136,7 +135,6 @@ struct SnapshotSources<'w> {
     room: Res<'w, ActiveRoom>,
     meta: Res<'w, ActiveRoomMetadata>,
     build: Res<'w, BuildModeState>,
-    navigator: Res<'w, RoomNavigatorState>,
     settings: Res<'w, RoomSettingsState>,
 }
 
@@ -148,7 +146,6 @@ fn publish_game_state(
 ) {
     let resumed = lifecycle.read().any(|m| *m == HostLifecycle::Resumed);
     let screens = OpenScreens {
-        navigator: src.navigator.is_open,
         room_settings: src.settings.is_open,
     };
     let snap = snapshot_with(
@@ -291,15 +288,13 @@ mod tests {
             f(&mut s);
             full_screen_open(AppState::InRoom, &s)
         };
-        assert!(one(|s| s.navigator = true));
         assert!(one(|s| s.room_settings = true));
     }
 
     #[test]
     fn the_snapshot_reports_an_open_screen() {
         let screens = OpenScreens {
-            navigator: true,
-            ..Default::default()
+            room_settings: true,
         };
         let snap = snapshot_with(
             AppState::InRoom,

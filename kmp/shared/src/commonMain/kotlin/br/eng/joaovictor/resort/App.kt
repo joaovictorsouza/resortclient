@@ -20,6 +20,8 @@ import br.eng.joaovictor.resort.views.hud.LocalHudVisibility
 import br.eng.joaovictor.resort.views.hud.HudViewModel
 import br.eng.joaovictor.resort.views.inventory.InventoryView
 import br.eng.joaovictor.resort.views.inventory.InventoryViewModel
+import br.eng.joaovictor.resort.views.navigator.NavigatorView
+import br.eng.joaovictor.resort.views.navigator.NavigatorViewModel
 import br.eng.joaovictor.resort.views.shop.ShopView
 import br.eng.joaovictor.resort.views.shop.ShopViewModel
 
@@ -62,6 +64,8 @@ fun App(game: GameHost) {
                 InventoryView(inventoryViewModel)
                 val shopViewModel = viewModel { ShopViewModel(game.shop, game.wallet) }
                 ShopView(shopViewModel)
+                val navigatorViewModel = viewModel { NavigatorViewModel(game.navigator) }
+                NavigatorView(navigatorViewModel)
             }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }

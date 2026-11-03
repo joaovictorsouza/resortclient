@@ -26,6 +26,10 @@ const TAB_BG_SELECTED: &str = "#4f46e5"; // indigo-600
 const EDGE: &str = "#334155"; // slate-700
 const EDGE_SELECTED: &str = "#818cf8"; // indigo-400
 
+/// Present when the Compose shell draws the room navigator: the bevy_hui window is not spawned then.
+#[derive(Resource)]
+pub struct ComposeNavigator;
+
 /// Built-in public spaces: (room id, name, description, capacity).
 pub const PUBLIC_SPACES: [(&str, &str, &str, u32); 2] = [
     (
@@ -403,10 +407,11 @@ fn sync_navigator_window(
     ids: Query<(Entity, &UiId)>,
     mut bar_tab: Local<Option<NavigatorTab>>,
     mut needs_fill: Local<bool>,
+    compose: Option<Res<ComposeNavigator>>,
 ) {
     let Some(templates) = templates else { return };
 
-    if !nav.is_open {
+    if !nav.is_open || compose.is_some() {
         for root in &roots {
             commands.entity(root).despawn();
         }

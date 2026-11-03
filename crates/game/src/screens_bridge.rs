@@ -34,7 +34,7 @@ use crate::navigator::{
     ActiveInputFocus, ActiveRoomMetadata, ComposeHud, NavigatorTab, RoomNavigatorState,
     RoomSettingsState, set_navigator_open, toggle_room_settings,
 };
-use crate::navigator_ui::{join_room, select_tab, start_search};
+use crate::navigator_ui::{ComposeNavigator, PUBLIC_SPACES, join_room, select_tab, start_search};
 use crate::net::NakamaResource;
 use crate::room::ActiveRoom;
 use crate::shop::{ComposeShop, ShopState, ShopStatus, can_afford, set_shop_open};
@@ -171,6 +171,8 @@ fn cached_thumbnail(cdn: &CdnAssets, catalog_id: &str) -> String {
 pub struct NavigatorSnapshot {
     pub open: bool,
     pub tab: &'static str,
+    /// The built-in public spaces (lobby, cafe), fixed in the game.
+    pub public: Vec<PublicSpace>,
     pub popular: Vec<RoomSummaryDto>,
     pub mine: Vec<RoomSummaryDto>,
     pub search: Vec<RoomSummaryDto>,
@@ -182,11 +184,28 @@ pub struct NavigatorSnapshot {
     pub status: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PublicSpace {
+    pub room_id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    pub max_users: u32,
+}
+
 impl From<&RoomNavigatorState> for NavigatorSnapshot {
     fn from(s: &RoomNavigatorState) -> Self {
         Self {
             open: s.is_open,
             tab: s.current_tab.key(),
+            public: PUBLIC_SPACES
+                .iter()
+                .map(|&(room_id, name, description, max_users)| PublicSpace {
+                    room_id,
+                    name,
+                    description,
+                    max_users,
+                })
+                .collect(),
             popular: s.popular_rooms.clone(),
             mine: s.my_rooms.clone(),
             search: s.search_results.clone(),
@@ -358,6 +377,7 @@ impl Plugin for ScreensBridgePlugin {
         app.insert_resource(ComposeInventory)
             .insert_resource(ComposeHud)
             .insert_resource(ComposeShop)
+            .insert_resource(ComposeNavigator)
             .add_systems(
                 Update,
                 (
@@ -918,6 +938,15 @@ mod tests {
         assert_eq!(json["offers"][0]["catalog_id"], "chair");
         assert_eq!(json["offers"][0]["thumbnail"], "/cache/chair.png");
         assert_eq!(json["offers"][0]["price_silver"], 5);
+    }
+
+    #[test]
+    fn the_navigator_snapshot_lists_the_public_spaces() {
+        let snap = NavigatorSnapshot::from(&RoomNavigatorState::default());
+        let json = serde_json::to_value(&snap).unwrap();
+        assert_eq!(json["public"][0]["room_id"], "lobby");
+        assert_eq!(json["public"][1]["room_id"], "cafe");
+        assert_eq!(json["public"][0]["max_users"], 100);
     }
 
     fn drag_app(owner: bool) -> App {

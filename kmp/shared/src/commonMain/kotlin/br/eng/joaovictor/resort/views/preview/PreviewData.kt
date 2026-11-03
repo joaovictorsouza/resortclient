@@ -6,6 +6,10 @@ import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.InventoryRow
 import br.eng.joaovictor.resort.models.ShopCategory
 import br.eng.joaovictor.resort.views.inventory.InventoryUiState
+import br.eng.joaovictor.resort.views.navigator.LayoutChoice
+import br.eng.joaovictor.resort.views.navigator.NavTab
+import br.eng.joaovictor.resort.views.navigator.NavigatorUiState
+import br.eng.joaovictor.resort.views.navigator.RoomCard
 import br.eng.joaovictor.resort.views.shop.ShopTile
 import br.eng.joaovictor.resort.views.shop.ShopUiState
 
@@ -65,6 +69,30 @@ internal object PreviewData {
         selected = tile(7, silver = 5000, gold = 20, affordable = false, selected = true),
         silver = 10,
         gold = 0,
+    )
+
+    val navigatorPublic = NavigatorUiState(
+        open = true,
+        tab = NavTab.Public,
+        cards = listOf(
+            RoomCard("lobby", "The Grand Lobby", "Espaço público central do hotel para interagir e conversar.  •  Capacidade 100"),
+            RoomCard("cafe", "Coffee House", "Cafeteria aconchegante para relaxar com amigos.  •  Capacidade 40"),
+        ),
+    )
+
+    fun navigatorRooms(tab: NavTab) = navigatorPublic.copy(
+        tab = tab,
+        cards = List(6) { RoomCard("room$it", if (it == 2) "Sala com um nome bem comprido para testar a quebra de linha" else "Sala $it", "Criado por Ana  •  Ocupação ${it + 1}/20  •  Pública") },
+    )
+
+    val navigatorCreate = navigatorPublic.copy(
+        tab = NavTab.Create,
+        cards = emptyList(),
+        createName = "Minha sala",
+        layouts = listOf(
+            LayoutChoice("small", "Pequena", "8x8 (máx. 10)", selected = true),
+            LayoutChoice("big", "Grande", "16x16 (máx. 40)", selected = false),
+        ),
     )
 
     val onboardingLogin = OnboardingStage(stage = "login")

@@ -90,11 +90,16 @@ data class RoomLayout(
     val imageAsset: String = "",
 )
 
+/** A built-in public space (lobby, cafe), fixed in the game. */
+@Serializable
+data class PublicSpace(val roomId: String = "", val name: String = "", val description: String = "", val maxUsers: Int = 0)
+
 @Serializable
 data class NavigatorState(
     val open: Boolean = false,
     /** `public|popular|mine|search|create` */
     val tab: String = "public",
+    val public: List<PublicSpace> = emptyList(),
     val popular: List<RoomSummary> = emptyList(),
     val mine: List<RoomSummary> = emptyList(),
     val search: List<RoomSummary> = emptyList(),
