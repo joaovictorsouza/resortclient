@@ -288,6 +288,10 @@ pub struct HudBuildModeText;
 #[derive(Component)]
 pub struct FurnitureContextMenuRoot;
 
+/// Present when the Compose shell draws the furniture options menu: the bevy_hui one is not spawned then.
+#[derive(Resource)]
+pub struct ComposeFurnitureMenu;
+
 #[derive(Component)]
 pub struct ContextRotateBtn(pub String); // item_id
 
@@ -965,6 +969,59 @@ fn handle_hud_mode_buttons(
     }
 }
 
+/// Context menu "Girar": turns a placed item a quarter turn (the server confirms). Shared by the bevy_hui
+/// button and the Compose shell's `furniture_rotate`.
+pub fn rotate_placed(furni: &PlacedFurniture, net: Option<&NakamaResource>) {
+    let next_rot = (furni.rotation + 1) % 4;
+    info!("Rotating item {} to {}", furni.item_id, next_rot);
+    if let Some(net) = net {
+        net.handle
+            .send_command(NakamaCommand::SendMessage(ClientMessage::RotateItem(
+                RotateItemRequest {
+                    item_id: furni.item_id.clone(),
+                    rotation: next_rot,
+                },
+            )));
+    }
+}
+
+/// Context menu "Mover": the item follows the pointer until a tile is picked. Shared by the bevy_hui
+/// button and the Compose shell's `furniture_move`.
+pub fn begin_move(build_state: &mut BuildModeState, furni: &PlacedFurniture) {
+    info!("Initiating move for item {}", furni.item_id);
+    let turned = furni.rotation % 2 == 1;
+    build_state.skip_first_click = true;
+    build_state.active_tool = BuildTool::Moving {
+        item_id: furni.item_id.clone(),
+        catalog_id: furni.catalog_id.clone(),
+        base_width: if turned { furni.depth } else { furni.width },
+        base_depth: if turned { furni.width } else { furni.depth },
+        walkable: furni.walkable,
+        color: parse_hex_color(&furni.color_hex),
+        rotation: furni.rotation,
+    };
+    build_state.selected_furniture_id = None;
+}
+
+/// Context menu "Recolher": sends the item back to the inventory. Shared by the bevy_hui button and the
+/// Compose shell's `furniture_pickup`.
+pub fn pickup_placed(
+    item_id: &str,
+    build_state: &mut BuildModeState,
+    net: Option<&NakamaResource>,
+) {
+    info!("Sending pickup request for item {}", item_id);
+    if let Some(net) = net {
+        net.handle
+            .send_command(NakamaCommand::SendMessage(ClientMessage::PickupItem(
+                PickupItemRequest {
+                    item_id: item_id.to_string(),
+                },
+            )));
+    }
+    build_state.selected_furniture_id = None;
+}
+
 fn handle_furniture_context_menu(
     mut commands: Commands,
     rotate_btn_query: Query<(&Interaction, &ContextRotateBtn), Changed<Interaction>>,
@@ -976,67 +1033,30 @@ fn handle_furniture_context_menu(
     net: Option<Res<NakamaResource>>,
     ui_font: Res<UiFont>,
     context_query: Query<Entity, With<FurnitureContextMenuRoot>>,
+    compose: Option<Res<ComposeFurnitureMenu>>,
 ) {
     // 4. Context Menu: Rotate
     for (interaction, btn) in rotate_btn_query.iter() {
-        if *interaction == Interaction::Pressed {
-            if let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0) {
-                let next_rot = (furni.rotation + 1) % 4;
-                info!("Rotating item {} to {}", btn.0, next_rot);
-                if let Some(net) = &net {
-                    net.handle
-                        .send_command(NakamaCommand::SendMessage(ClientMessage::RotateItem(
-                            RotateItemRequest {
-                                item_id: btn.0.clone(),
-                                rotation: next_rot,
-                            },
-                        )));
-                }
-            }
+        if *interaction == Interaction::Pressed
+            && let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0)
+        {
+            rotate_placed(furni, net.as_deref());
         }
     }
 
     // 5. Context Menu: Move
     for (interaction, btn) in move_btn_query.iter() {
-        if *interaction == Interaction::Pressed {
-            if let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0) {
-                info!("Initiating move for item {}", btn.0);
-                build_state.skip_first_click = true;
-                build_state.active_tool = BuildTool::Moving {
-                    item_id: furni.item_id.clone(),
-                    catalog_id: furni.catalog_id.clone(),
-                    base_width: if furni.rotation % 2 == 1 {
-                        furni.depth
-                    } else {
-                        furni.width
-                    },
-                    base_depth: if furni.rotation % 2 == 1 {
-                        furni.width
-                    } else {
-                        furni.depth
-                    },
-                    walkable: furni.walkable,
-                    color: parse_hex_color(&furni.color_hex),
-                    rotation: furni.rotation,
-                };
-                build_state.selected_furniture_id = None;
-            }
+        if *interaction == Interaction::Pressed
+            && let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0)
+        {
+            begin_move(&mut build_state, furni);
         }
     }
 
     // 6. Context Menu: Pickup
     for (interaction, btn) in pickup_btn_query.iter() {
         if *interaction == Interaction::Pressed {
-            info!("Sending pickup request for item {}", btn.0);
-            if let Some(net) = &net {
-                net.handle
-                    .send_command(NakamaCommand::SendMessage(ClientMessage::PickupItem(
-                        PickupItemRequest {
-                            item_id: btn.0.clone(),
-                        },
-                    )));
-            }
-            build_state.selected_furniture_id = None;
+            pickup_placed(&btn.0, &mut build_state, net.as_deref());
         }
     }
 
@@ -1052,10 +1072,11 @@ fn handle_furniture_context_menu(
         for entity in context_query.iter() {
             commands.entity(entity).despawn();
         }
-        if let Some(ref sel_id) = build_state.selected_furniture_id {
-            if let Some(furni) = furniture_query.iter().find(|f| &f.item_id == sel_id) {
-                spawn_furniture_context_menu(&mut commands, furni, &ui_font);
-            }
+        if compose.is_none()
+            && let Some(ref sel_id) = build_state.selected_furniture_id
+            && let Some(furni) = furniture_query.iter().find(|f| &f.item_id == sel_id)
+        {
+            spawn_furniture_context_menu(&mut commands, furni, &ui_font);
         }
     }
 }

@@ -40,5 +40,9 @@ class RoomUiViewModel(private val roomUi: RoomUiRepository) : ViewModel() {
     fun cancelDelete() = roomUi.settingsCancelDelete()
     fun confirmDelete() = roomUi.settingsConfirmDelete()
     fun closeSettings() = roomUi.settingsClose()
+    fun furnitureRotate(itemId: String) = roomUi.furnitureRotate(itemId)
+    fun furnitureMove(itemId: String) = roomUi.furnitureMove(itemId)
+    fun furniturePickup(itemId: String) = roomUi.furniturePickup(itemId)
+    fun furnitureClose() = roomUi.furnitureMenuClose()
     fun answerDoorbell(requestId: String, allowed: Boolean) = roomUi.answerDoorbell(requestId, allowed)
 }

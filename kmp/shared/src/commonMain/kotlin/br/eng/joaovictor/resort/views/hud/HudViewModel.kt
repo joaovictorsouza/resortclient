@@ -46,13 +46,12 @@ fun roomTitle(name: String, visibility: String): String =
     "${name.ifEmpty { "The Grand Lobby" }}  •  [${visibilityLabel(visibility)}]"
 
 /**
- * The HUD shows in a room, unless a bevy_hui full-screen screen is open ([GameState.fullScreenOpen])
- * or a Compose screen holds it hidden ([hiddenByCompose], see [HudVisibility]).
+ * The HUD shows in a room, unless a Compose screen holds it hidden ([hiddenByCompose], see [HudVisibility]).
  */
 fun hudUi(game: GameState, wallet: Wallet, hiddenByCompose: Boolean = false): HudUiState {
     val room = game.room
     return HudUiState(
-        visible = game.inRoom && !game.fullScreenOpen && !hiddenByCompose,
+        visible = game.inRoom && !hiddenByCompose,
         roomTitle = room?.let { roomTitle(it.name, it.visibility) }.orEmpty(),
         isOwner = game.isOwnRoom,
         silver = if (wallet.loaded) formatAmount(wallet.silver) else "-",

@@ -29,7 +29,10 @@ use crate::character_creator::{
     creator_thumbnail_path, palette_for, randomize_appearance, save_appearance,
 };
 use crate::config::GameConfig;
-use crate::furniture::{BuildModeState, BuildTool, ExternalPointer, PlayerInventoryState};
+use crate::furniture::{
+    BuildModeState, BuildTool, ComposeFurnitureMenu, ExternalPointer, PlacedFurniture,
+    PlayerInventoryState, begin_move, pickup_placed, rotate_placed,
+};
 use crate::inventory::{ComposeInventory, begin_placing, start_placing, thumbnail_path};
 use crate::navigator::{
     ActiveInputFocus, ActiveRoomMetadata, ComposeHud, ComposeRoomUi, DoorbellState, FocusedInput,
@@ -358,21 +361,32 @@ pub struct DoorbellSnapshot {
     pub requester_name: String,
 }
 
-/// The small in-room popups the Compose shell draws: avatar menu, room settings and the doorbell.
+/// The placed item whose options menu is open (build mode, an item tapped).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct FurnitureMenuSnapshot {
+    pub item_id: String,
+    pub catalog_id: String,
+}
+
+/// The small in-room popups the Compose shell draws: avatar menu, room settings, the doorbell and the
+/// furniture options menu.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RoomUiSnapshot {
     pub avatar_menu: bool,
     pub settings: Option<SettingsSnapshot>,
     pub doorbell: Option<DoorbellSnapshot>,
+    pub furniture_menu: Option<FurnitureMenuSnapshot>,
 }
 
 pub fn room_ui_snapshot(
     avatar_menu_open: bool,
     settings: &RoomSettingsState,
     doorbell: &DoorbellState,
+    furniture_menu: Option<FurnitureMenuSnapshot>,
 ) -> RoomUiSnapshot {
     RoomUiSnapshot {
         avatar_menu: avatar_menu_open,
+        furniture_menu,
         settings: settings.is_open.then(|| SettingsSnapshot {
             name: settings.edited_name.clone(),
             visibility: settings.edited_visibility.clone(),
@@ -443,6 +457,10 @@ struct DoorbellCmd {
     allowed: bool,
 }
 #[derive(Deserialize)]
+struct ItemCmd {
+    item_id: String,
+}
+#[derive(Deserialize)]
 struct HexCmd {
     hex: String,
 }
@@ -487,6 +505,7 @@ impl Plugin for ScreensBridgePlugin {
             .insert_resource(ComposeNavigator)
             .insert_resource(ComposeCreator)
             .insert_resource(ComposeRoomUi)
+            .insert_resource(ComposeFurnitureMenu)
             .add_systems(
                 Update,
                 (
@@ -970,18 +989,30 @@ fn hud_commands(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn publish_room_ui(
     menu: Res<crate::avatar_menu::AvatarMenuState>,
     settings: Res<RoomSettingsState>,
     doorbell: Res<DoorbellState>,
+    build: Res<BuildModeState>,
+    furniture: Query<&PlacedFurniture>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<RoomUiSnapshot>>,
 ) {
+    let furniture_menu = build
+        .selected_furniture_id
+        .as_ref()
+        .filter(|_| build.is_active && build.active_tool == BuildTool::None)
+        .and_then(|id| furniture.iter().find(|f| &f.item_id == id))
+        .map(|f| FurnitureMenuSnapshot {
+            item_id: f.item_id.clone(),
+            catalog_id: f.catalog_id.clone(),
+        });
     publish(
         &outbox,
         EVT_ROOM_UI,
-        room_ui_snapshot(menu.is_open, &settings, &doorbell),
+        room_ui_snapshot(menu.is_open, &settings, &doorbell, furniture_menu),
         resumed(&mut lifecycle),
         &mut last,
     );
@@ -1008,6 +1039,8 @@ fn room_ui_commands(
     mut meta: ResMut<ActiveRoomMetadata>,
     mut nav: ResMut<RoomNavigatorState>,
     mut doorbell: ResMut<DoorbellState>,
+    mut build: ResMut<BuildModeState>,
+    furniture: Query<&PlacedFurniture>,
     net: Option<Res<NakamaResource>>,
 ) {
     for msg in messages.read() {
@@ -1053,6 +1086,26 @@ fn room_ui_commands(
                 settings.is_confirming_delete = false;
                 focus.0 = FocusedInput::None;
             }
+            "furniture_rotate" => {
+                if let Some(f) = parse::<ItemCmd>(msg)
+                    .and_then(|c| furniture.iter().find(|f| f.item_id == c.item_id))
+                {
+                    rotate_placed(f, net.as_deref());
+                }
+            }
+            "furniture_move" => {
+                if let Some(f) = parse::<ItemCmd>(msg)
+                    .and_then(|c| furniture.iter().find(|f| f.item_id == c.item_id))
+                {
+                    begin_move(&mut build, f);
+                }
+            }
+            "furniture_pickup" => {
+                if let Some(c) = parse::<ItemCmd>(msg) {
+                    pickup_placed(&c.item_id, &mut build, net.as_deref());
+                }
+            }
+            "furniture_menu_close" => build.selected_furniture_id = None,
             "doorbell_answer" => {
                 if let Some(c) = parse::<DoorbellCmd>(msg) {
                     answer_doorbell(&c.request_id, c.allowed, &mut doorbell, net.as_deref());
@@ -1313,6 +1366,7 @@ mod tests {
             false,
             &RoomSettingsState::default(),
             &DoorbellState::default(),
+            None,
         );
         assert!(!closed.avatar_menu && closed.settings.is_none() && closed.doorbell.is_none());
 
@@ -1331,7 +1385,12 @@ mod tests {
             }),
             ..Default::default()
         };
-        let open = room_ui_snapshot(true, &settings, &doorbell);
+        let menu = FurnitureMenuSnapshot {
+            item_id: "i1".into(),
+            catalog_id: "chair".into(),
+        };
+        let open = room_ui_snapshot(true, &settings, &doorbell, Some(menu));
+        assert_eq!(open.furniture_menu.as_ref().unwrap().catalog_id, "chair");
         assert!(open.avatar_menu);
         assert_eq!(open.settings.as_ref().unwrap().visibility, "hidden");
         assert!(open.settings.as_ref().unwrap().confirming_delete);

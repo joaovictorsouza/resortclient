@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.sp
 import br.eng.joaovictor.resort.components.GameSearchBar
 import br.eng.joaovictor.resort.components.GameWindow
 import br.eng.joaovictor.resort.models.DoorbellInfo
+import br.eng.joaovictor.resort.models.FurnitureMenuInfo
 import br.eng.joaovictor.resort.models.SettingsInfo
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import br.eng.joaovictor.resort.views.preview.PreviewData
@@ -54,6 +55,10 @@ class RoomUiActions(
     val onConfirmDelete: () -> Unit = {},
     val onCloseSettings: () -> Unit = {},
     val onDoorbell: (String, Boolean) -> Unit = { _, _ -> },
+    val onFurnitureRotate: (String) -> Unit = {},
+    val onFurnitureMove: (String) -> Unit = {},
+    val onFurniturePickup: (String) -> Unit = {},
+    val onFurnitureClose: () -> Unit = {},
 )
 
 /** Collects the popups' state: avatar menu, room settings window and the doorbell. */
@@ -64,12 +69,14 @@ fun RoomUiView(viewModel: RoomUiViewModel) {
         RoomUiActions(
             viewModel::closeAvatarMenu, viewModel::visuals, viewModel::signOut, viewModel::setName, viewModel::setVisibility,
             viewModel::save, viewModel::askDelete, viewModel::cancelDelete, viewModel::confirmDelete,
-            viewModel::closeSettings, viewModel::answerDoorbell,
+            viewModel::closeSettings, viewModel::answerDoorbell, viewModel::furnitureRotate, viewModel::furnitureMove,
+            viewModel::furniturePickup, viewModel::furnitureClose,
         )
     }
     if (ui.avatarMenu) AvatarMenu(actions)
     ui.settings?.let { RoomSettingsWindow(it, actions) }
     ui.doorbell?.let { Doorbell(it, actions) }
+    ui.furnitureMenu?.let { FurnitureMenu(it, actions) }
 }
 
 /**
@@ -152,6 +159,31 @@ fun Doorbell(info: DoorbellInfo, actions: RoomUiActions) {
     }
 }
 
+/**
+ * Options of a placed item in build mode: rotate, move, pick up. A card at the bottom of the screen so
+ * the room stays visible; touches elsewhere reach the game (tapping the floor dismisses it there).
+ */
+@Composable
+fun FurnitureMenu(info: FurnitureMenuInfo, actions: RoomUiActions) {
+    Box(Modifier.fillMaxSize().safeDrawingPadding().padding(bottom = 72.dp), contentAlignment = Alignment.BottomCenter) {
+        Column(
+            Modifier.widthIn(max = 360.dp).background(Card, RoundedCornerShape(16.dp)).padding(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Opções do móvel", fontSize = 15.sp)
+                Text("✕", fontSize = 18.sp, modifier = Modifier.clickable(onClick = actions.onFurnitureClose).padding(6.dp))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { actions.onFurnitureRotate(info.itemId) }) { Text("Girar 90°") }
+                Button(onClick = { actions.onFurnitureMove(info.itemId) }) { Text("Mover") }
+                Button(onClick = { actions.onFurniturePickup(info.itemId) }, colors = ButtonDefaults.buttonColors(containerColor = Danger)) { Text("Recolher") }
+            }
+        }
+    }
+}
+
 // ---- Previews (IDE only; see ai-docs/process/previews-compose.md) ----
 
 @Preview(name = "Avatar menu", widthDp = 800, heightDp = 360)
@@ -175,3 +207,7 @@ private fun DoorbellPreview() = PreviewScene { Doorbell(PreviewData.doorbell, Ro
 @Composable
 private fun DoorbellPortraitPreview() =
     PreviewScene { Doorbell(PreviewData.doorbell.copy(requesterName = "Um visitante com um nome bem comprido mesmo"), RoomUiActions()) }
+
+@Preview(name = "Furniture menu", widthDp = 800, heightDp = 360)
+@Composable
+private fun FurnitureMenuPreview() = PreviewScene { FurnitureMenu(FurnitureMenuInfo("i1", "chair"), RoomUiActions()) }

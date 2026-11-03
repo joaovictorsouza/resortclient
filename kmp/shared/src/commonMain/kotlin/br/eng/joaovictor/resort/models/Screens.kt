@@ -119,12 +119,17 @@ data class SettingsInfo(val name: String = "", val visibility: String = "public"
 @Serializable
 data class DoorbellInfo(val requestId: String = "", val requesterName: String = "")
 
-/** The small popups the shell draws inside a room: avatar menu, room settings and the doorbell. */
+/** The placed item whose options menu is open (build mode, an item tapped). */
+@Serializable
+data class FurnitureMenuInfo(val itemId: String = "", val catalogId: String = "")
+
+/** The small popups the shell draws inside a room: avatar menu, room settings, the doorbell and the furniture menu. */
 @Serializable
 data class RoomUiState(
     val avatarMenu: Boolean = false,
     val settings: SettingsInfo? = null,
     val doorbell: DoorbellInfo? = null,
+    val furnitureMenu: FurnitureMenuInfo? = null,
 )
 
 // ---- Character creator (`creator_state`) ----

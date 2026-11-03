@@ -2,19 +2,17 @@
 //! screen the game is on, the connection, and the current room. Useful to any shell feature, not only the HUD.
 //!
 //! Game -> shell (`HostEvent::App`):
-//! `game_state {"app","connection","error","room","build_mode","full_screen_open"}` when it changes and when the host resumes.
+//! `game_state {"app","connection","error","room","build_mode"}` when it changes and when the host resumes.
 //! - `app`: `loading|login|nickname|creator|connecting|in_room|error` (from `AppState`).
 //! - `connection`: `idle|connecting|connected|reconnecting|disconnected|error` (from `ConnectionStatus`;
 //!   `reconnecting` wins while the worker restores a dropped socket, and the app stays `in_room`).
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
-//! - `full_screen_open`: `true` while a big bevy_hui window is shown (room settings; the creator,
-//!   shop and the navigator are Compose now); the shell hides its HUD meanwhile. Small popups over the scene (avatar menu, doorbell) do not count.
 
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
 use crate::furniture::BuildModeState;
-use crate::navigator::{ActiveRoomMetadata, RoomSettingsState};
+use crate::navigator::ActiveRoomMetadata;
 use crate::room::ActiveRoom;
 use crate::state::AppState;
 use bevy::ecs::system::SystemParam;
@@ -39,19 +37,6 @@ pub struct GameStateSnapshot {
     pub error: Option<String>,
     pub room: Option<RoomInfo>,
     pub build_mode: bool,
-    pub full_screen_open: bool,
-}
-
-/// Which big bevy_hui windows are open besides the character creator (which is an `AppState`). The
-/// avatar menu and the doorbell are small popups over the scene and do not hide the HUD.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct OpenScreens {
-    pub room_settings: bool,
-}
-
-/// A full-screen or modal bevy_hui screen is shown, so the shell's HUD must get out of its way.
-pub fn full_screen_open(screens: &OpenScreens) -> bool {
-    screens.room_settings
 }
 
 pub fn app_name(state: AppState) -> &'static str {
@@ -86,17 +71,6 @@ pub fn snapshot(
     meta: &ActiveRoomMetadata,
     build: &BuildModeState,
 ) -> GameStateSnapshot {
-    snapshot_with(state, status, room, meta, build, &OpenScreens::default())
-}
-
-pub fn snapshot_with(
-    state: AppState,
-    status: &ConnectionStatus,
-    room: &ActiveRoom,
-    meta: &ActiveRoomMetadata,
-    build: &BuildModeState,
-    screens: &OpenScreens,
-) -> GameStateSnapshot {
     let in_room = state == AppState::InRoom;
     GameStateSnapshot {
         app: app_name(state),
@@ -116,7 +90,6 @@ pub fn snapshot_with(
             is_owner: meta.is_owner,
         }),
         build_mode: in_room && build.is_active,
-        full_screen_open: full_screen_open(screens),
     }
 }
 
@@ -135,7 +108,6 @@ struct SnapshotSources<'w> {
     room: Res<'w, ActiveRoom>,
     meta: Res<'w, ActiveRoomMetadata>,
     build: Res<'w, BuildModeState>,
-    settings: Res<'w, RoomSettingsState>,
 }
 
 fn publish_game_state(
@@ -145,16 +117,12 @@ fn publish_game_state(
     mut last: Local<Option<GameStateSnapshot>>,
 ) {
     let resumed = lifecycle.read().any(|m| *m == HostLifecycle::Resumed);
-    let screens = OpenScreens {
-        room_settings: src.settings.is_open,
-    };
-    let snap = snapshot_with(
+    let snap = snapshot(
         *src.state.get(),
         &src.status,
         &src.room,
         &src.meta,
         &src.build,
-        &screens,
     );
     if resumed || last.as_ref() != Some(&snap) {
         if let Ok(payload) = serde_json::to_vec(&snap) {
@@ -274,35 +242,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             json,
-            r#"{"app":"connecting","connection":"idle","error":null,"room":null,"build_mode":false,"full_screen_open":false}"#
+            r#"{"app":"connecting","connection":"idle","error":null,"room":null,"build_mode":false}"#
         );
-    }
-
-    #[test]
-    fn only_big_bevy_hui_windows_count_as_full_screen() {
-        let none = OpenScreens::default();
-        assert!(!full_screen_open(&none));
-        let one = |f: fn(&mut OpenScreens)| {
-            let mut s = OpenScreens::default();
-            f(&mut s);
-            full_screen_open(&s)
-        };
-        assert!(one(|s| s.room_settings = true));
-    }
-
-    #[test]
-    fn the_snapshot_reports_an_open_screen() {
-        let screens = OpenScreens {
-            room_settings: true,
-        };
-        let snap = snapshot_with(
-            AppState::InRoom,
-            &ConnectionStatus::default(),
-            &ActiveRoom::default(),
-            &meta(false),
-            &BuildModeState::default(),
-            &screens,
-        );
-        assert!(snap.full_screen_open);
     }
 }

@@ -20,13 +20,14 @@ import kotlin.test.assertTrue
 class RoomUiTest {
     @Test
     fun theSnapshotParsesSnakeCaseKeys() {
-        val ui = parseRoomUi("""{"avatar_menu":true,"settings":{"name":"Casa","visibility":"hidden","confirming_delete":true},"doorbell":{"request_id":"r1","requester_name":"Ana"}}""")
+        val ui = parseRoomUi("""{"avatar_menu":true,"settings":{"name":"Casa","visibility":"hidden","confirming_delete":true},"doorbell":{"request_id":"r1","requester_name":"Ana"},"furniture_menu":{"item_id":"i1","catalog_id":"chair"}}""")
         assertNotNull(ui)
         assertTrue(ui.avatarMenu)
         assertEquals("hidden", ui.settings?.visibility)
         assertTrue(ui.settings?.confirmingDelete == true)
         assertEquals("r1", ui.doorbell?.requestId)
         assertEquals("Ana", ui.doorbell?.requesterName)
+        assertEquals("i1", ui.furnitureMenu?.itemId)
     }
 
     @Test
@@ -57,12 +58,14 @@ class RoomUiTest {
         repo.settingsVisibility("hidden")
         repo.answerDoorbell("r1", true)
         repo.signOut()
+        repo.furnitureRotate("i1")
         assertEquals(
             listOf(
                 "settings_name" to """{"text":"Casa"}""",
                 "settings_visibility" to """{"visibility":"hidden"}""",
                 "doorbell_answer" to """{"request_id":"r1","allowed":true}""",
                 "avatar_sign_out" to "{}",
+                "furniture_rotate" to """{"item_id":"i1"}""",
             ),
             gateway.sent.toList(),
         )

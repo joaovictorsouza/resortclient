@@ -63,18 +63,10 @@ class HudUiTest {
     }
 
     @Test
-    fun aBevyHuiFullScreenScreenHidesTheHud() {
-        val shop = inRoom().copy(fullScreenOpen = true)
-        assertFalse(hudUi(shop, Wallet()).visible)
-        assertTrue(hudUi(inRoom(), Wallet()).visible)
-    }
-
-    @Test
-    fun theHudIsVisibleOnlyInARoomWithNoScreenAndNoComposeOwner() {
+    fun theHudIsVisibleOnlyInARoomWithNoComposeOwner() {
         assertTrue(hudUi(inRoom(), Wallet(), hiddenByCompose = false).visible)
         assertFalse(hudUi(inRoom(), Wallet(), hiddenByCompose = true).visible)
         assertFalse(hudUi(GameState.INITIAL, Wallet(), hiddenByCompose = false).visible) // not in a room
-        assertFalse(hudUi(inRoom().copy(fullScreenOpen = true), Wallet(), hiddenByCompose = true).visible)
     }
 
     @Test

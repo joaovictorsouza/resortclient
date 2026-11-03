@@ -111,6 +111,10 @@ class RoomUiRepository(private val game: GameGateway, scope: CoroutineScope) {
     fun settingsCancelDelete() = game.send("settings_delete_cancel", "{}")
     fun settingsConfirmDelete() = game.send("settings_delete_confirm", "{}")
     fun settingsClose() = game.send("settings_close", "{}")
+    fun furnitureRotate(itemId: String) = game.command("furniture_rotate", "item_id" to itemId)
+    fun furnitureMove(itemId: String) = game.command("furniture_move", "item_id" to itemId)
+    fun furniturePickup(itemId: String) = game.command("furniture_pickup", "item_id" to itemId)
+    fun furnitureMenuClose() = game.send("furniture_menu_close", "{}")
     fun answerDoorbell(requestId: String, allowed: Boolean) =
         game.command("doorbell_answer", "request_id" to requestId, "allowed" to allowed)
 }
