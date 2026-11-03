@@ -5,6 +5,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +36,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,6 +51,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -51,6 +60,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.eng.joaovictor.resort.components.GameSearchBar
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -98,7 +108,17 @@ fun InventoryView(viewModel: InventoryViewModel) {
             onDrag = viewModel::drag,
         )
     }
-    InventoryContent(ui, actions)
+    var searchOpen by rememberSaveable { mutableStateOf(ui.query.isNotEmpty()) }
+    InventoryContent(
+        ui,
+        actions,
+        searchOpen = searchOpen,
+        onToggleSearch = {
+            val next = toggleSearch(searchOpen, ui.query)
+            searchOpen = next.open
+            if (next.query != ui.query) actions.onQuery(next.query)
+        },
+    )
 }
 
 /**
@@ -107,7 +127,13 @@ fun InventoryView(viewModel: InventoryViewModel) {
  * Stateless: it takes plain UI state, so it can be previewed without a ViewModel or the game.
  */
 @Composable
-fun InventoryContent(ui: InventoryUiState, actions: InventoryActions) {
+fun InventoryContent(
+    ui: InventoryUiState,
+    actions: InventoryActions,
+    /** The search field is hidden until the player taps the search icon or the title bar. */
+    searchOpen: Boolean = ui.query.isNotEmpty(),
+    onToggleSearch: () -> Unit = {},
+) {
     BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
         val density = androidx.compose.ui.platform.LocalDensity.current
         val maxW = constraints.maxWidth.toFloat()
@@ -136,12 +162,14 @@ fun InventoryContent(ui: InventoryUiState, actions: InventoryActions) {
         ) {
             Column(Modifier.padding(bottom = 8.dp)) {
                 TitleBar(
+                    searchOpen = searchOpen,
+                    onSearch = onToggleSearch,
                     onMove = { delta ->
                         origin = clampWindow(pos + delta, maxW, maxH, winWpx, winHpx)
                     },
                     onClose = actions.onClose,
                 )
-                Filters(ui, actions)
+                Filters(ui, actions, searchOpen)
                 Content(
                     ui,
                     actions,
@@ -202,32 +230,52 @@ internal fun leftWindow(wasOutside: Boolean, point: Offset, window: Rect): Boole
     wasOutside || dropOutside(point, window)
 
 @Composable
-private fun TitleBar(onMove: (Offset) -> Unit, onClose: () -> Unit) {
+private fun TitleBar(
+    searchOpen: Boolean,
+    onSearch: () -> Unit,
+    onMove: (Offset) -> Unit,
+    onClose: () -> Unit,
+) {
     // The gesture block below is created once; it must call the latest lambda, which holds the window's
     // current position (a stale one made every drag restart from the first position, so it never moved).
     val move by rememberUpdatedState(onMove)
+    val toggle by rememberUpdatedState(onSearch)
     Row(
         Modifier.fillMaxWidth()
             .background(Color.White.copy(alpha = 0.06f))
+            // A tap on the title area toggles the search; a drag (below) moves the window instead. The
+            // buttons consume their own taps, so they never reach this detector.
+            .pointerInput(Unit) { detectTapGestures { toggle() } }
             .pointerInput(Unit) { detectDragGestures { change, amount -> change.consume(); move(amount) } }
             .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("Inventário", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        TextButton(onClick = onSearch) {
+            Text("🔍", fontSize = 18.sp, modifier = Modifier.alpha(if (searchOpen) 1f else 0.7f))
+        }
         TextButton(onClick = onClose) { Text("✕", fontSize = 18.sp) }
     }
 }
 
 @Composable
-private fun Filters(ui: InventoryUiState, actions: InventoryActions) {
+private fun Filters(ui: InventoryUiState, actions: InventoryActions, searchOpen: Boolean) {
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        OutlinedTextField(
-            value = ui.query,
-            onValueChange = actions.onQuery,
-            singleLine = true,
-            placeholder = { Text("Buscar") },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        val keyboard = LocalSoftwareKeyboardController.current
+        LaunchedEffect(searchOpen) { if (!searchOpen) keyboard?.hide() }
+        AnimatedVisibility(visible = searchOpen, enter = expandVertically(), exit = shrinkVertically()) {
+            val focus = remember { FocusRequester() }
+            LaunchedEffect(Unit) {
+                focus.requestFocus()
+                keyboard?.show()
+            }
+            GameSearchBar(
+                value = ui.query,
+                onValueChange = actions.onQuery,
+                placeholderText = "Buscar",
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+            )
+        }
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(ui.categories) { key ->
                 val on = key == ui.category
@@ -370,10 +418,25 @@ private fun InventoryLoadingPreview() =
 private fun InventoryEmptyPreview() =
     PreviewScene { InventoryContent(Loaded.copy(rows = emptyList()), InventoryActions()) }
 
+@Preview(name = "Search closed (icon only)", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventorySearchClosedPreview() =
+    PreviewScene { InventoryContent(Loaded, InventoryActions(), searchOpen = false) }
+
+@Preview(name = "Search open, empty", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventorySearchOpenEmptyPreview() =
+    PreviewScene { InventoryContent(Loaded, InventoryActions(), searchOpen = true) }
+
+@Preview(name = "Search open, with text", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventorySearchOpenPreview() =
+    PreviewScene { InventoryContent(Loaded.copy(query = "pol"), InventoryActions(), searchOpen = true) }
+
 @Preview(name = "Search with no result", widthDp = 800, heightDp = 360)
 @Composable
 private fun InventoryNoResultPreview() =
-    PreviewScene { InventoryContent(Loaded.copy(query = "zzz"), InventoryActions()) }
+    PreviewScene { InventoryContent(Loaded.copy(query = "zzz"), InventoryActions(), searchOpen = true) }
 
 @Preview(name = "Not the owner (warning, no drag)", widthDp = 800, heightDp = 360)
 @Composable

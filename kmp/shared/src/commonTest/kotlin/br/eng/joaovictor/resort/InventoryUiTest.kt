@@ -9,7 +9,9 @@ import br.eng.joaovictor.resort.repositories.InventoryRepository
 import br.eng.joaovictor.resort.views.hud.HudVisibility
 import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.INVENTORY_HUD_OWNER
+import br.eng.joaovictor.resort.views.inventory.SearchToggle
 import br.eng.joaovictor.resort.views.inventory.WINDOW_HEIGHT_FRACTION
+import br.eng.joaovictor.resort.views.inventory.toggleSearch
 import br.eng.joaovictor.resort.views.inventory.clampWindow
 import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
@@ -113,6 +115,16 @@ class InventoryUiTest {
         val winH = maxH * WINDOW_HEIGHT_FRACTION
         // Dragged far down it stops at the bottom edge of the area.
         assertEquals(maxH - winH, clampWindow(Offset(0f, 999f), 800f, maxH, 300f, winH).y)
+    }
+
+    @Test
+    fun openingTheSearchKeepsTheQueryAndClosingClearsIt() {
+        assertEquals(SearchToggle(open = true, query = ""), toggleSearch(open = false, query = ""))
+        assertEquals(SearchToggle(open = true, query = "pol"), toggleSearch(open = false, query = "pol"))
+        assertEquals(SearchToggle(open = false, query = ""), toggleSearch(open = true, query = "pol"))
+        // Toggling twice from closed ends closed with no filter.
+        val reopened = toggleSearch(open = false, query = "")
+        assertEquals(SearchToggle(false, ""), toggleSearch(reopened.open, reopened.query))
     }
 
     @Test

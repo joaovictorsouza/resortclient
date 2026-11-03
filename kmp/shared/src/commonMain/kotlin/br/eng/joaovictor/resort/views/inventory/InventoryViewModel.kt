@@ -130,3 +130,13 @@ fun dragPhase(wasOutside: Boolean, nowOutside: Boolean, released: Boolean): Stri
     wasOutside -> "cancel"
     else -> null
 }
+
+/** Search field state of the window: whether it is shown and what it filters by. */
+data class SearchToggle(val open: Boolean, val query: String)
+
+/**
+ * Tapping the search icon (or the title bar) toggles the field. Closing clears the query, so the list is
+ * never filtered by a field the player cannot see.
+ */
+fun toggleSearch(open: Boolean, query: String): SearchToggle =
+    if (open) SearchToggle(open = false, query = "") else SearchToggle(open = true, query = query)
