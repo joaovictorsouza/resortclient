@@ -11,6 +11,12 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -316,12 +322,15 @@ private fun Content(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            LazyColumn(
-                Modifier.padding(horizontal = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
+            // Square tiles, as many per row as fit.
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 72.dp),
+                modifier = Modifier.padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(ui.visible, key = { it.catalogId }) { row ->
-                    ItemRow(
+                    ItemTile(
                         row,
                         ui.canPlace && row.draggable,
                         { actions.onSelect(row.catalogId) },
@@ -333,8 +342,9 @@ private fun Content(
     }
 }
 
+/** A square inventory tile: thumbnail, quantity badge and name caption; highlighted when selected. */
 @Composable
-private fun ItemRow(
+private fun ItemTile(
     row: InventoryRow,
     draggable: Boolean,
     onTap: () -> Unit,
@@ -346,10 +356,12 @@ private fun ItemRow(
     var topLeft by remember { mutableStateOf(Offset.Zero) }
     var finger by remember { mutableStateOf(Offset.Zero) }
     val shape = RoundedCornerShape(10.dp)
-    Row(
+    Box(
         Modifier.fillMaxWidth()
-            .background(if (row.selected) Selected.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.05f), shape)
-            .then(if (row.selected) Modifier.border(1.dp, Selected, shape) else Modifier)
+            .aspectRatio(1f)
+            .clip(shape)
+            .background(if (row.selected) Selected.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f))
+            .border(if (row.selected) 2.dp else 1.dp, if (row.selected) Selected else Color.White.copy(alpha = 0.12f), shape)
             .onGloballyPositioned { topLeft = it.positionInRoot() }
             .clickable(onClick = onTap)
             .then(
@@ -372,14 +384,29 @@ private fun ItemRow(
                 } else {
                     Modifier
                 },
-            )
-            .padding(8.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            ),
     ) {
-        Thumbnail(row, Modifier.size(48.dp))
-        Text(row.name, Modifier.weight(1f))
-        row.quantity?.let { Text("x$it", color = Color.White.copy(alpha = 0.7f)) }
+        Thumbnail(row, Modifier.fillMaxSize().padding(bottom = 18.dp))
+        Text(
+            row.name,
+            color = Color.White,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.45f))
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+        )
+        row.quantity?.takeIf { it > 1 }?.let { // a quantity of 1 needs no badge
+            Text(
+                "x$it",
+                color = Color.White,
+                fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
+            )
+        }
     }
 }
 
@@ -403,6 +430,11 @@ private val Loaded = PreviewData.inventoryLoaded
 @Preview(name = "Items, one selected (landscape)", widthDp = 800, heightDp = 360)
 @Composable
 private fun InventoryItemsPreview() = PreviewScene { InventoryContent(Loaded, InventoryActions()) }
+
+@Preview(name = "Grid with many items", widthDp = 800, heightDp = 360)
+@Composable
+private fun InventoryManyPreview() =
+    PreviewScene { InventoryContent(PreviewData.inventoryMany, InventoryActions()) }
 
 @Preview(name = "Items (portrait)", widthDp = 360, heightDp = 780)
 @Composable

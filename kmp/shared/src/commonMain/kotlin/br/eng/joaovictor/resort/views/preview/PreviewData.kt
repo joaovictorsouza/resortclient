@@ -36,6 +36,13 @@ internal object PreviewData {
         canPlace = true,
     )
 
+    /** Enough tiles to fill several grid rows (one selected, mixed quantities). */
+    val inventoryMany = inventoryLoaded.copy(
+        rows = List(30) { i ->
+            row("item$i", "Item número $i", if (i % 3 == 0) "floor_decoration" else "collider", quantity = 1 + i % 4, selected = i == 4)
+        },
+    )
+
     val onboardingLogin = OnboardingStage(stage = "login")
     val onboardingNickname = OnboardingStage(stage = "nickname")
 }
