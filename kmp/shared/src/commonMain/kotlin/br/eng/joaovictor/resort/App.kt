@@ -15,6 +15,8 @@ import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.components.LocalThumbnailLoader
 import br.eng.joaovictor.resort.game.GameHost
+import br.eng.joaovictor.resort.views.creator.CreatorView
+import br.eng.joaovictor.resort.views.creator.CreatorViewModel
 import br.eng.joaovictor.resort.views.hud.HudView
 import br.eng.joaovictor.resort.views.hud.LocalHudVisibility
 import br.eng.joaovictor.resort.views.hud.HudViewModel
@@ -66,6 +68,8 @@ fun App(game: GameHost) {
                 ShopView(shopViewModel)
                 val navigatorViewModel = viewModel { NavigatorViewModel(game.navigator) }
                 NavigatorView(navigatorViewModel)
+                val creatorViewModel = viewModel { CreatorViewModel(game.creator) }
+                CreatorView(creatorViewModel)
             }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }

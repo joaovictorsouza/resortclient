@@ -9,7 +9,7 @@
 //! - `error`: a short player-facing message while the connection failed, otherwise `null`.
 //! - `room`: `null` outside a room, otherwise `{"id","name","visibility","is_owner"}` (kept while reconnecting).
 //! - `build_mode`: `true` while the player is in a room with the build mode on (the shell shows its build controls).
-//! - `full_screen_open`: `true` while a big bevy_hui window is shown (room settings, character creator; the
+//! - `full_screen_open`: `true` while a big bevy_hui window is shown (room settings; the creator,
 //!   shop and the navigator are Compose now); the shell hides its HUD meanwhile. Small popups over the scene (avatar menu, doorbell) do not count.
 
 use crate::connection::{ConnectionStatus, NetEventSummary, friendly_error_message};
@@ -50,8 +50,8 @@ pub struct OpenScreens {
 }
 
 /// A full-screen or modal bevy_hui screen is shown, so the shell's HUD must get out of its way.
-pub fn full_screen_open(state: AppState, screens: &OpenScreens) -> bool {
-    state == AppState::CharacterCreator || screens.room_settings
+pub fn full_screen_open(screens: &OpenScreens) -> bool {
+    screens.room_settings
 }
 
 pub fn app_name(state: AppState) -> &'static str {
@@ -116,7 +116,7 @@ pub fn snapshot_with(
             is_owner: meta.is_owner,
         }),
         build_mode: in_room && build.is_active,
-        full_screen_open: full_screen_open(state, screens),
+        full_screen_open: full_screen_open(screens),
     }
 }
 
@@ -281,12 +281,11 @@ mod tests {
     #[test]
     fn only_big_bevy_hui_windows_count_as_full_screen() {
         let none = OpenScreens::default();
-        assert!(!full_screen_open(AppState::InRoom, &none));
-        assert!(full_screen_open(AppState::CharacterCreator, &none));
+        assert!(!full_screen_open(&none));
         let one = |f: fn(&mut OpenScreens)| {
             let mut s = OpenScreens::default();
             f(&mut s);
-            full_screen_open(AppState::InRoom, &s)
+            full_screen_open(&s)
         };
         assert!(one(|s| s.room_settings = true));
     }

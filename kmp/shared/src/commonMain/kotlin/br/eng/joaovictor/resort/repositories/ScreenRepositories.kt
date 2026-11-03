@@ -105,6 +105,13 @@ class CreatorRepository(private val game: GameGateway, scope: CoroutineScope) {
     /** Picks (or, for slots that can be empty, removes) an item of the active category. */
     fun pick(id: String) = game.command("creator_pick", "id" to id)
     fun setBody(bodyType: String) = game.command("creator_body", "body_type" to bodyType)
+
+    /** Paints the active category's colour group with a `#RRGGBB` swatch. */
+    fun color(hex: String) = game.command("creator_color", "hex" to hex)
+    fun randomize() = game.send("creator_random", "{}")
+
+    /** Turns the 3D preview by [delta] radians. */
+    fun rotate(delta: Float) = game.command("creator_rotate", "delta" to delta)
     fun save() = game.send("creator_save", "{}")
     fun cancel() = game.send("creator_cancel", "{}")
 }

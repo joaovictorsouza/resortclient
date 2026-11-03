@@ -120,12 +120,22 @@ data class CreatorItem(
     /** Asset path (`ui/thumbs/characters/<id>.png`); resolve it against the CDN base with [thumbnailUrl]. */
     val thumbnail: String = "",
     val selected: Boolean = false,
+    /** Local file of the thumbnail in the game's CDN cache; empty until it is downloaded. */
+    val thumbnailFile: String = "",
 ) {
     fun thumbnailUrl(cdnBase: String): String = "${cdnBase.trimEnd('/')}/$thumbnail"
 }
 
 @Serializable
-data class CreatorSection(val key: String = "", val items: List<CreatorItem> = emptyList())
+data class CreatorSection(
+    val key: String = "",
+    val label: String = "",
+    val items: List<CreatorItem> = emptyList(),
+    /** `#RRGGBB` swatches of the category; empty when it has none. */
+    val palette: List<String> = emptyList(),
+    /** The category's current main colour. */
+    val color: String? = null,
+)
 
 @Serializable
 data class CreatorAppearance(
@@ -143,6 +153,9 @@ data class CreatorAppearance(
 @Serializable
 data class CreatorState(
     val active: Boolean = false,
+    /** Editing an existing avatar (can close without saving) rather than creating the first one. */
+    val editing: Boolean = false,
+    val confirmLabel: String = "",
     val category: String = "face",
     val appearance: CreatorAppearance = CreatorAppearance(),
     val categories: List<CreatorSection> = emptyList(),

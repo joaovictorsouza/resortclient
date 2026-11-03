@@ -21,6 +21,7 @@ import br.eng.joaovictor.resort.parseHud
 import br.eng.joaovictor.resort.parseStage
 import br.eng.joaovictor.resort.platformLog
 import br.eng.joaovictor.resort.repositories.BuildModeRepository
+import br.eng.joaovictor.resort.repositories.CreatorRepository
 import br.eng.joaovictor.resort.repositories.GameStateRepository
 import br.eng.joaovictor.resort.repositories.HudRepository
 import br.eng.joaovictor.resort.repositories.InventoryRepository
@@ -226,6 +227,7 @@ class GameHost(
     val buildMode = BuildModeRepository(gateway, gameState, scope)
     val shop = ShopRepository(gateway, scope)
     val navigator = NavigatorRepository(gateway, scope)
+    val creator = CreatorRepository(gateway, scope)
     val inventory = InventoryRepository(gateway, scope)
     val hudCommands = HudRepository(gateway)
 

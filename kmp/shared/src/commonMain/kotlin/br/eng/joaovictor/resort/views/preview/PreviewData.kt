@@ -6,6 +6,10 @@ import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.InventoryRow
 import br.eng.joaovictor.resort.models.ShopCategory
 import br.eng.joaovictor.resort.views.inventory.InventoryUiState
+import br.eng.joaovictor.resort.views.creator.CreatorOption
+import br.eng.joaovictor.resort.views.creator.CreatorSwatch
+import br.eng.joaovictor.resort.views.creator.CreatorTab
+import br.eng.joaovictor.resort.views.creator.CreatorUiState
 import br.eng.joaovictor.resort.views.navigator.LayoutChoice
 import br.eng.joaovictor.resort.views.navigator.NavTab
 import br.eng.joaovictor.resort.views.navigator.NavigatorUiState
@@ -93,6 +97,31 @@ internal object PreviewData {
             LayoutChoice("small", "Pequena", "8x8 (máx. 10)", selected = true),
             LayoutChoice("big", "Grande", "16x16 (máx. 40)", selected = false),
         ),
+    )
+
+    private fun tabs(selected: String) = listOf("body" to "Corpo", "face" to "Rosto", "skin" to "Pele", "hair" to "Cabelo", "top" to "Superior", "shoes" to "Calçados")
+        .map { (k, l) -> CreatorTab(k, l, selected = k == selected) }
+
+    private val skinTones = listOf("#FFE0BD", "#E8BEAC", "#C68642", "#8D5524", "#4A2C0F")
+
+    val creatorHair = CreatorUiState(
+        active = true,
+        confirmLabel = "Confirmar e entrar no jogo",
+        tabs = tabs("hair"),
+        swatches = listOf("#1C1C1C", "#5A3825", "#B55239", "#D6B370", "#E91E63", "#2196F3").mapIndexed { i, h -> CreatorSwatch(h, selected = i == 2) },
+        options = List(10) { CreatorOption("hair$it", "Penteado $it", "", selected = it == 3) },
+    )
+
+    val creatorSkin = creatorHair.copy(
+        tabs = tabs("skin"),
+        swatches = skinTones.mapIndexed { i, h -> CreatorSwatch(h, selected = i == 1) },
+        options = emptyList(),
+    )
+
+    val creatorBody = creatorHair.copy(
+        tabs = tabs("body"),
+        swatches = emptyList(),
+        options = listOf(CreatorOption("female", "Feminino", "", selected = true), CreatorOption("male", "Masculino", "", selected = false)),
     )
 
     val onboardingLogin = OnboardingStage(stage = "login")

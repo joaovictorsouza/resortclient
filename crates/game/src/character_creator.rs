@@ -92,6 +92,11 @@ impl CharacterCatalog {
     }
 }
 
+/// Present when the Compose shell draws the creator panel: the bevy_hui window is not spawned (the 3D
+/// preview, camera and lights stay).
+#[derive(Resource)]
+pub struct ComposeCreator;
+
 #[derive(Resource)]
 pub struct CharacterCreatorState {
     pub appearance: AvatarAppearance,
@@ -188,6 +193,19 @@ pub fn color_group(category: CreatorCategory) -> Option<&'static str> {
         CreatorCategory::Outfit => Some("outfit"),
         CreatorCategory::Shoes => Some("shoes"),
         CreatorCategory::Body | CreatorCategory::Face | CreatorCategory::Accessories => None,
+    }
+}
+
+/// The swatches offered for a category's colour group (empty when it has none).
+pub fn palette_for(category: CreatorCategory) -> &'static [&'static str] {
+    match category {
+        CreatorCategory::Skin => SKIN_PALETTE,
+        CreatorCategory::Hair => HAIR_PALETTE,
+        CreatorCategory::Top
+        | CreatorCategory::Bottom
+        | CreatorCategory::Outfit
+        | CreatorCategory::Shoes => CLOTHES_PALETTE,
+        CreatorCategory::Body | CreatorCategory::Face | CreatorCategory::Accessories => &[],
     }
 }
 
@@ -397,6 +415,7 @@ fn setup_creator_screen(
     config: Res<GameConfig>,
     asset_server: Res<AssetServer>,
     catalog: Res<CharacterCatalog>,
+    compose: Option<Res<ComposeCreator>>,
 ) {
     // Reset per-session mutable state (keep appearance)
     state.rotation_y = 0.0;
@@ -464,11 +483,13 @@ fn setup_creator_screen(
         swatch: asset_server.load("ui/creator_swatch.html"),
         option: asset_server.load("ui/creator_option.html"),
     };
-    commands.spawn((
-        CharacterCreatorRoot,
-        HtmlNode(templates.window.clone()),
-        bevy::ui::UiTargetCamera(studio_camera),
-    ));
+    if compose.is_none() {
+        commands.spawn((
+            CharacterCreatorRoot,
+            HtmlNode(templates.window.clone()),
+            bevy::ui::UiTargetCamera(studio_camera),
+        ));
+    }
     commands.insert_resource(templates);
 }
 

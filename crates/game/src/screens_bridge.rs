@@ -24,8 +24,9 @@
 
 use crate::cdn_assets::CdnAssets;
 use crate::character_creator::{
-    CatalogItem, CharacterCatalog, CharacterCreatorState, CreatorCategory, apply_body_choice,
-    apply_item_choice, creator_thumbnail_path, save_appearance,
+    CatalogItem, CharacterCatalog, CharacterCreatorState, ComposeCreator, CreatorCategory,
+    apply_body_choice, apply_color_choice, apply_item_choice, color_group, confirm_label,
+    creator_thumbnail_path, palette_for, randomize_appearance, save_appearance,
 };
 use crate::config::GameConfig;
 use crate::furniture::{BuildModeState, BuildTool, ExternalPointer, PlayerInventoryState};
@@ -156,12 +157,16 @@ impl InventorySnapshot {
 
 /// Local file of the thumbnail in the CDN cache; asks the sync thread for it when it is not there.
 fn cached_thumbnail(cdn: &CdnAssets, catalog_id: &str) -> String {
-    let logical = thumbnail_path(catalog_id);
-    let file = cdn.index.read().ok().and_then(|i| i.get(&logical).cloned());
+    cached_file(cdn, &thumbnail_path(catalog_id))
+}
+
+/// Local file of a logical asset path in the CDN cache; asks the sync thread for it when it is not there.
+fn cached_file(cdn: &CdnAssets, logical: &str) -> String {
+    let file = cdn.index.read().ok().and_then(|i| i.get(logical).cloned());
     match file {
         Some(path) => path.to_string_lossy().into_owned(),
         None => {
-            cdn.request(&logical);
+            cdn.request(logical);
             String::new()
         }
     }
@@ -224,18 +229,28 @@ pub struct CreatorItem {
     pub id: String,
     pub name: String,
     pub thumbnail: String,
+    /// Local file of the thumbnail in the CDN cache (empty until downloaded or for items without one).
+    pub thumbnail_file: String,
     pub selected: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CreatorSection {
     pub key: &'static str,
+    pub label: &'static str,
     pub items: Vec<CreatorItem>,
+    /// Colour swatches (`#RRGGBB`) of the category, empty when it has none.
+    pub palette: &'static [&'static str],
+    /// The category's current main colour, when it has a palette.
+    pub color: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CreatorSnapshot {
     pub active: bool,
+    /// Editing an existing avatar (the player can close without saving) rather than creating the first one.
+    pub editing: bool,
+    pub confirm_label: &'static str,
     pub category: &'static str,
     pub appearance: AvatarAppearance,
     pub categories: Vec<CreatorSection>,
@@ -278,24 +293,48 @@ pub fn creator_snapshot(
         .iter()
         .map(|&cat| {
             let picked = selected_id(cat, &state.appearance);
-            let items = catalog_categories(cat)
-                .iter()
-                .flat_map(|c| crate::appearance::selectable(&catalog.items, c, body))
-                .map(|i: &CatalogItem| CreatorItem {
-                    id: i.id.clone(),
-                    name: i.name.clone(),
-                    thumbnail: creator_thumbnail_path(&i.id),
-                    selected: picked.contains(&i.id.as_str()),
+            let items: Vec<CreatorItem> = if cat == CreatorCategory::Body {
+                [
+                    (protocol::BODY_FEMALE, "Feminino"),
+                    (protocol::BODY_MALE, "Masculino"),
+                ]
+                .into_iter()
+                .map(|(id, name)| CreatorItem {
+                    id: id.to_string(),
+                    name: name.to_string(),
+                    thumbnail: String::new(),
+                    thumbnail_file: String::new(),
+                    selected: state.appearance.body_type == id,
                 })
-                .collect();
+                .collect()
+            } else {
+                catalog_categories(cat)
+                    .iter()
+                    .flat_map(|c| crate::appearance::selectable(&catalog.items, c, body))
+                    .map(|i: &CatalogItem| CreatorItem {
+                        id: i.id.clone(),
+                        name: i.name.clone(),
+                        thumbnail: creator_thumbnail_path(&i.id),
+                        thumbnail_file: String::new(),
+                        selected: picked.contains(&i.id.as_str()),
+                    })
+                    .collect()
+            };
             CreatorSection {
                 key: cat.key(),
+                label: cat.label(),
                 items,
+                palette: palette_for(cat),
+                color: color_group(cat)
+                    .and_then(|g| crate::appearance::main_color(&state.appearance, g))
+                    .map(str::to_string),
             }
         })
         .collect();
     CreatorSnapshot {
         active,
+        editing: state.return_to_room,
+        confirm_label: confirm_label(state.return_to_room),
         category: state.active_category.key(),
         appearance: state.appearance.clone(),
         categories,
@@ -344,6 +383,14 @@ struct CategoryCmd {
     category: String,
 }
 #[derive(Deserialize)]
+struct HexCmd {
+    hex: String,
+}
+#[derive(Deserialize)]
+struct DeltaCmd {
+    delta: f32,
+}
+#[derive(Deserialize)]
 struct BodyCmd {
     body_type: String,
 }
@@ -378,6 +425,7 @@ impl Plugin for ScreensBridgePlugin {
             .insert_resource(ComposeHud)
             .insert_resource(ComposeShop)
             .insert_resource(ComposeNavigator)
+            .insert_resource(ComposeCreator)
             .add_systems(
                 Update,
                 (
@@ -476,15 +524,28 @@ fn publish_creator(
     app_state: Res<State<AppState>>,
     creator: Res<CharacterCreatorState>,
     catalog: Res<CharacterCatalog>,
+    cdn: Option<Res<CdnAssets>>,
     mut lifecycle: MessageReader<HostLifecycle>,
     outbox: Res<Outbox>,
     mut last: Local<Option<CreatorSnapshot>>,
 ) {
     let active = *app_state.get() == AppState::CharacterCreator;
+    let mut snapshot = creator_snapshot(active, &creator, &catalog);
+    if let (true, Some(cdn)) = (active, cdn.as_deref()) {
+        for item in snapshot
+            .categories
+            .iter_mut()
+            .flat_map(|c| c.items.iter_mut())
+        {
+            if !item.thumbnail.is_empty() {
+                item.thumbnail_file = cached_file(cdn, &item.thumbnail);
+            }
+        }
+    }
     publish(
         &outbox,
         EVT_CREATOR,
-        creator_snapshot(active, &creator, &catalog),
+        snapshot,
         resumed(&mut lifecycle),
         &mut last,
     );
@@ -665,7 +726,30 @@ fn creator_commands(
             "creator_pick" => {
                 if let Some(c) = parse::<IdCmd>(msg) {
                     let cat = creator.active_category;
-                    apply_item_choice(&mut creator.appearance, cat, &c.id, &catalog.items);
+                    if cat == CreatorCategory::Body {
+                        // Same as the bevy_hui option: the body type switches the compatible parts too.
+                        apply_body_choice(&mut creator.appearance, &catalog.items, &c.id);
+                    } else {
+                        apply_item_choice(&mut creator.appearance, cat, &c.id, &catalog.items);
+                    }
+                }
+            }
+            "creator_color" => {
+                if let Some(c) = parse::<HexCmd>(msg) {
+                    let cat = creator.active_category;
+                    apply_color_choice(&mut creator.appearance, cat, &c.hex);
+                }
+            }
+            "creator_random" => {
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(42) as usize;
+                randomize_appearance(&mut creator.appearance, &catalog.items, nanos);
+            }
+            "creator_rotate" => {
+                if let Some(c) = parse::<DeltaCmd>(msg) {
+                    creator.rotation_y += c.delta;
                 }
             }
             "creator_body" => {
@@ -947,6 +1031,46 @@ mod tests {
         assert_eq!(json["public"][0]["room_id"], "lobby");
         assert_eq!(json["public"][1]["room_id"], "cafe");
         assert_eq!(json["public"][0]["max_users"], 100);
+    }
+
+    #[test]
+    fn the_creator_snapshot_offers_bodies_palettes_labels_and_the_mode() {
+        let catalog = CharacterCatalog::fixture();
+        let mut state = CharacterCreatorState::default();
+        let first = creator_snapshot(true, &state, &catalog);
+        assert!(!first.editing);
+        assert_eq!(first.confirm_label, "Confirmar e entrar no jogo");
+
+        let body = first.categories.iter().find(|c| c.key == "body").unwrap();
+        assert_eq!(body.label, "Corpo");
+        assert_eq!(body.items.len(), 2);
+        assert_eq!(body.items.iter().filter(|i| i.selected).count(), 1);
+        assert!(body.palette.is_empty() && body.color.is_none());
+
+        let skin = first.categories.iter().find(|c| c.key == "skin").unwrap();
+        assert!(!skin.palette.is_empty());
+        assert!(skin.items.is_empty()); // a colour-only category
+        let json = serde_json::to_value(&first).unwrap();
+        assert_eq!(json["categories"][2]["key"], "skin");
+        assert!(
+            json["categories"][2]["palette"][0]
+                .as_str()
+                .unwrap()
+                .starts_with('#')
+        );
+
+        state.return_to_room = true;
+        let editing = creator_snapshot(true, &state, &catalog);
+        assert!(editing.editing);
+        assert_eq!(editing.confirm_label, "Confirmar e voltar ao jogo");
+    }
+
+    #[test]
+    fn creator_commands_parse() {
+        let c: HexCmd = serde_json::from_str(r##"{"hex":"#FFE0BD"}"##).unwrap();
+        assert_eq!(c.hex, "#FFE0BD");
+        let d: DeltaCmd = serde_json::from_str(r#"{"delta":-0.45}"#).unwrap();
+        assert!((d.delta + 0.45).abs() < 1e-6);
     }
 
     fn drag_app(owner: bool) -> App {
