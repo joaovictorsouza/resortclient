@@ -1,6 +1,7 @@
 package br.eng.joaovictor.resort
 
 import androidx.compose.ui.geometry.Offset
+import br.eng.joaovictor.resort.components.clampWindow
 import androidx.compose.ui.geometry.Rect
 import br.eng.joaovictor.resort.models.InventoryItem
 import br.eng.joaovictor.resort.models.InventoryState
@@ -12,7 +13,6 @@ import br.eng.joaovictor.resort.views.inventory.INVENTORY_HUD_OWNER
 import br.eng.joaovictor.resort.views.inventory.SearchToggle
 import br.eng.joaovictor.resort.views.inventory.WINDOW_HEIGHT_FRACTION
 import br.eng.joaovictor.resort.views.inventory.toggleSearch
-import br.eng.joaovictor.resort.views.inventory.clampWindow
 import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
 import br.eng.joaovictor.resort.views.inventory.leftWindow

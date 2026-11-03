@@ -66,7 +66,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import br.eng.joaovictor.resort.components.GameSearchBar
+import br.eng.joaovictor.resort.components.GameWindow
+import br.eng.joaovictor.resort.components.SearchSection
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -140,90 +141,60 @@ fun InventoryContent(
     searchOpen: Boolean = ui.query.isNotEmpty(),
     onToggleSearch: () -> Unit = {},
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()) {
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        val maxW = constraints.maxWidth.toFloat()
-        val maxH = constraints.maxHeight.toFloat()
-        val winW = minOf(420.dp, maxWidth * 0.6f)
-        val winH = maxHeight * WINDOW_HEIGHT_FRACTION
-        val winWpx = with(density) { winW.toPx() }
-        val winHpx = with(density) { winH.toPx() }
-        var origin by remember { mutableStateOf<Offset?>(null) }
-        val pos = origin ?: Offset((maxW - winWpx) / 2f, (maxH - winHpx) / 2f)
-        var windowBounds by remember { mutableStateOf(Rect.Zero) }
-        var drag by remember { mutableStateOf<Drag?>(null) }
-        var outside by remember { mutableStateOf(false) }
+    var windowBounds by remember { mutableStateOf(Rect.Zero) }
+    var drag by remember { mutableStateOf<Drag?>(null) }
+    var outside by remember { mutableStateOf(false) }
 
-        Surface(
-            modifier = Modifier
-                .offset { IntOffset(pos.x.roundToInt(), pos.y.roundToInt()) }
-                .width(winW)
-                .height(winH)
-                .alpha(if (outside) 0f else if (drag != null) 0.35f else 1f)
-                .onGloballyPositioned { windowBounds = it.boundsInRoot() },
-            shape = WindowShape,
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 12.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.15f)),
-        ) {
-            Column(Modifier.padding(bottom = 8.dp)) {
-                TitleBar(
-                    searchOpen = searchOpen,
-                    onSearch = onToggleSearch,
-                    onMove = { delta ->
-                        origin = clampWindow(pos + delta, maxW, maxH, winWpx, winHpx)
-                    },
-                    onClose = actions.onClose,
-                )
-                Filters(ui, actions, searchOpen)
-                Content(
-                    ui,
-                    actions,
-                    onDragStart = { drag = it; outside = false },
-                    onDragMove = { pos ->
-                        val d = drag ?: return@Content
-                        val now = leftWindow(outside, pos, windowBounds)
-                        dragPhase(outside, now, released = false)?.let { actions.onDrag(d.row.catalogId, pos.x, pos.y, it) }
-                        outside = now
-                        drag = d.copy(position = pos)
-                    },
-                    onDragEnd = { end ->
-                        val d = drag
-                        if (d != null) {
-                            val now = leftWindow(outside, end, windowBounds)
-                            dragPhase(outside, now, released = true)?.let { actions.onDrag(d.row.catalogId, end.x, end.y, it) }
-                        }
-                        drag = null
-                        // A committed drag leaves the window hidden until the game closes it (no flash back).
-                    },
-                    onDragCancel = {
-                        val d = drag
-                        if (d != null) dragPhase(outside, false, released = false)?.let { actions.onDrag(d.row.catalogId, 0f, 0f, it) }
-                        drag = null
-                        outside = false
-                    },
-                )
+    GameWindow(
+        title = "Inventário",
+        onClose = actions.onClose,
+        searchOpen = searchOpen,
+        onToggleSearch = onToggleSearch,
+        windowAlpha = if (outside) 0f else if (drag != null) 0.35f else 1f,
+        onBoundsChange = { windowBounds = it },
+        overlay = {
+            drag?.takeIf { !outside }?.let { d ->
+                Box(
+                    Modifier.offset { IntOffset((d.position.x - 40).roundToInt(), (d.position.y - 40).roundToInt()) }
+                        .size(80.dp)
+                        .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Thumbnail(d.row, Modifier.size(72.dp))
+                }
             }
-        }
-        drag?.takeIf { !outside }?.let { d ->
-            Box(
-                Modifier.offset { IntOffset((d.position.x - 40).roundToInt(), (d.position.y - 40).roundToInt()) }
-                    .size(80.dp)
-                    .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Thumbnail(d.row, Modifier.size(72.dp))
-            }
-        }
+        },
+    ) {
+        Filters(ui, actions, searchOpen)
+        Content(
+            ui,
+            actions,
+            onDragStart = { drag = it; outside = false },
+            onDragMove = { pos ->
+                val d = drag ?: return@Content
+                val now = leftWindow(outside, pos, windowBounds)
+                dragPhase(outside, now, released = false)?.let { actions.onDrag(d.row.catalogId, pos.x, pos.y, it) }
+                outside = now
+                drag = d.copy(position = pos)
+            },
+            onDragEnd = { end ->
+                val d = drag
+                if (d != null) {
+                    val now = leftWindow(outside, end, windowBounds)
+                    dragPhase(outside, now, released = true)?.let { actions.onDrag(d.row.catalogId, end.x, end.y, it) }
+                }
+                drag = null
+                // A committed drag leaves the window hidden until the game closes it (no flash back).
+            },
+            onDragCancel = {
+                val d = drag
+                if (d != null) dragPhase(outside, false, released = false)?.let { actions.onDrag(d.row.catalogId, 0f, 0f, it) }
+                drag = null
+                outside = false
+            },
+        )
     }
 }
-
-/** The window keeps fully inside the available area. */
-internal fun clampWindow(target: Offset, maxW: Float, maxH: Float, winW: Float, winH: Float): Offset =
-    Offset(
-        target.x.coerceIn(0f, (maxW - winW).coerceAtLeast(0f)),
-        target.y.coerceIn(0f, (maxH - winH).coerceAtLeast(0f)),
-    )
 
 /** A point outside the window's bounds. */
 internal fun dropOutside(point: Offset, window: Rect): Boolean = !window.contains(point)
@@ -236,52 +207,9 @@ internal fun leftWindow(wasOutside: Boolean, point: Offset, window: Rect): Boole
     wasOutside || dropOutside(point, window)
 
 @Composable
-private fun TitleBar(
-    searchOpen: Boolean,
-    onSearch: () -> Unit,
-    onMove: (Offset) -> Unit,
-    onClose: () -> Unit,
-) {
-    // The gesture block below is created once; it must call the latest lambda, which holds the window's
-    // current position (a stale one made every drag restart from the first position, so it never moved).
-    val move by rememberUpdatedState(onMove)
-    val toggle by rememberUpdatedState(onSearch)
-    Row(
-        Modifier.fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.06f))
-            // A tap on the title area toggles the search; a drag (below) moves the window instead. The
-            // buttons consume their own taps, so they never reach this detector.
-            .pointerInput(Unit) { detectTapGestures { toggle() } }
-            .pointerInput(Unit) { detectDragGestures { change, amount -> change.consume(); move(amount) } }
-            .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("Inventário", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = onSearch) {
-            Text("🔍", fontSize = 18.sp, modifier = Modifier.alpha(if (searchOpen) 1f else 0.7f))
-        }
-        TextButton(onClick = onClose) { Text("✕", fontSize = 18.sp) }
-    }
-}
-
-@Composable
 private fun Filters(ui: InventoryUiState, actions: InventoryActions, searchOpen: Boolean) {
     Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val keyboard = LocalSoftwareKeyboardController.current
-        LaunchedEffect(searchOpen) { if (!searchOpen) keyboard?.hide() }
-        AnimatedVisibility(visible = searchOpen, enter = expandVertically(), exit = shrinkVertically()) {
-            val focus = remember { FocusRequester() }
-            LaunchedEffect(Unit) {
-                focus.requestFocus()
-                keyboard?.show()
-            }
-            GameSearchBar(
-                value = ui.query,
-                onValueChange = actions.onQuery,
-                placeholderText = "Buscar",
-                modifier = Modifier.fillMaxWidth().focusRequester(focus),
-            )
-        }
+        SearchSection(open = searchOpen, query = ui.query, onQuery = actions.onQuery)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             items(ui.categories) { key ->
                 val on = key == ui.category
