@@ -8,25 +8,48 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
+/** How much of the HUD shows. The most restrictive request wins: Hidden over Compact over Full. */
+enum class HudMode { Full, Compact, Hidden }
+
+/** Pure resolution of the mode from who asks for what. */
+fun resolveHudMode(hiders: Set<String>, compacters: Set<String>): HudMode = when {
+    hiders.isNotEmpty() -> HudMode.Hidden
+    compacters.isNotEmpty() -> HudMode.Compact
+    else -> HudMode.Full
+}
+
 /**
- * Lets Compose screens hide the HUD while they are on screen. The HUD stays hidden while any owner
- * holds it, so two screens never fight over it; the owner is any stable name (e.g. `"shop"`).
- * Hiding twice or releasing an owner that does not hold it is a no-op.
+ * Lets Compose screens shrink or hide the HUD while they are on screen. Each owner (any stable name,
+ * e.g. `"shop"`) asks for [hide] or [compact]; the HUD takes the most restrictive request. Asking twice,
+ * or releasing an owner that holds nothing, is a no-op.
  */
 class HudVisibility {
-    private val owners = MutableStateFlow<Set<String>>(emptySet())
+    private data class Holds(val hiders: Set<String> = emptySet(), val compacters: Set<String> = emptySet())
+
+    private val holds = MutableStateFlow(Holds())
+    private val _mode = MutableStateFlow(HudMode.Full)
     private val _visible = MutableStateFlow(true)
 
-    /** False while at least one owner holds the HUD hidden. */
+    val mode: StateFlow<HudMode> = _mode.asStateFlow()
+
+    /** False only while the mode is [HudMode.Hidden]. */
     val visible: StateFlow<Boolean> = _visible.asStateFlow()
 
-    fun hide(owner: String) = set { it + owner }
+    fun hide(owner: String) = set { it.copy(hiders = it.hiders + owner) }
 
-    fun show(owner: String) = set { it - owner }
+    /** Panels: only the room pill and the coins stay. */
+    fun compact(owner: String) = set { it.copy(compacters = it.compacters + owner) }
 
-    private fun set(change: (Set<String>) -> Set<String>) {
-        owners.update(change)
-        _visible.value = owners.value.isEmpty()
+    fun release(owner: String) = set { Holds(it.hiders - owner, it.compacters - owner) }
+
+    /** Same as [release]; kept for the screens that still use `hide`/`show`. */
+    fun show(owner: String) = release(owner)
+
+    private fun set(change: (Holds) -> Holds) {
+        holds.update(change)
+        val mode = resolveHudMode(holds.value.hiders, holds.value.compacters)
+        _mode.value = mode
+        _visible.value = mode != HudMode.Hidden
     }
 }
 
@@ -42,6 +65,16 @@ fun HideHudWhileVisible(owner: String, controller: HudVisibility? = LocalHudVisi
     if (controller == null) return
     DisposableEffect(controller, owner) {
         controller.hide(owner)
-        onDispose { controller.show(owner) }
+        onDispose { controller.release(owner) }
+    }
+}
+
+/** Like [HideHudWhileVisible], but the HUD only shrinks to the room pill and the coins. */
+@Composable
+fun CompactHudWhileVisible(owner: String, controller: HudVisibility? = LocalHudVisibility.current) {
+    if (controller == null) return
+    DisposableEffect(controller, owner) {
+        controller.compact(owner)
+        onDispose { controller.release(owner) }
     }
 }

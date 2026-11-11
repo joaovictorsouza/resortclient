@@ -3,7 +3,6 @@ package br.eng.joaovictor.resort
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -14,6 +13,8 @@ import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.components.LocalThumbnailLoader
+import br.eng.joaovictor.resort.ds.theme.ResortTheme
+import br.eng.joaovictor.resort.ds.theme.rememberGameFeedback
 import br.eng.joaovictor.resort.game.GameHost
 import br.eng.joaovictor.resort.views.creator.CreatorView
 import br.eng.joaovictor.resort.views.creator.CreatorViewModel
@@ -35,7 +36,7 @@ import br.eng.joaovictor.resort.views.shop.ShopViewModel
  */
 @Composable
 fun App(game: GameHost) {
-    MaterialTheme(colorScheme = darkColorScheme()) {
+    ResortTheme(feedback = rememberGameFeedback()) {
         BevyHostEffects(game.backend)
         val error by game.error.collectAsState()
         val stage by game.stage.collectAsState()

@@ -27,8 +27,12 @@ internal object PreviewData {
     val hudInRoom = HudUiState(
         visible = true,
         roomTitle = "Casa do João  •  [Pública]",
+        roomName = "Casa do João",
+        visibility = "public",
         silver = "1.234",
         gold = "56",
+        silverAmount = 1_234,
+        goldAmount = 56,
     )
 
     private fun row(id: String, name: String, category: String = "collider", quantity: Int? = 1, selected: Boolean = false) =

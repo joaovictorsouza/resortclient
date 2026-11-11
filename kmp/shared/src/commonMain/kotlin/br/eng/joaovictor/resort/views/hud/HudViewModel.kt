@@ -2,6 +2,7 @@ package br.eng.joaovictor.resort.views.hud
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import br.eng.joaovictor.resort.ds.format.formatGroupedAmount
 import br.eng.joaovictor.resort.models.Connection
 import br.eng.joaovictor.resort.models.GameState
 import br.eng.joaovictor.resort.models.Wallet
@@ -26,14 +27,17 @@ data class HudUiState(
     val gold: String = "-",
     val reconnecting: Boolean = false,
     val buildMode: Boolean = false,
+    /** The room name alone (the lobby's when unnamed) and its raw visibility, for the room pill. */
+    val roomName: String = "",
+    val visibility: String = "",
+    /** Raw balances (null until loaded) for the animated pills; [silver] and [gold] stay the formatted text. */
+    val silverAmount: Long? = null,
+    val goldAmount: Long? = null,
+    val mode: HudMode = HudMode.Full,
 )
 
 /** `1234567` -> `1.234.567` (pt-BR), like the game's `format_amount`. */
-fun formatAmount(value: Long): String {
-    val digits = kotlin.math.abs(value).toString()
-    val grouped = digits.reversed().chunked(3).joinToString(".").reversed()
-    return if (value < 0) "-$grouped" else grouped
-}
+fun formatAmount(value: Long): String = formatGroupedAmount(value)
 
 fun visibilityLabel(visibility: String): String = when (visibility) {
     "public" -> "Pública"
@@ -41,17 +45,24 @@ fun visibilityLabel(visibility: String): String = when (visibility) {
     else -> "Privada"
 }
 
+private const val LOBBY_NAME = "The Grand Lobby"
+
 /** `"Nome  •  [Pública]"`; an unnamed room is the lobby. */
 fun roomTitle(name: String, visibility: String): String =
-    "${name.ifEmpty { "The Grand Lobby" }}  •  [${visibilityLabel(visibility)}]"
+    "${name.ifEmpty { LOBBY_NAME }}  •  [${visibilityLabel(visibility)}]"
 
 /**
  * The HUD shows in a room, unless a Compose screen holds it hidden ([hiddenByCompose], see [HudVisibility]).
  */
-fun hudUi(game: GameState, wallet: Wallet, hiddenByCompose: Boolean = false): HudUiState {
+fun hudUi(game: GameState, wallet: Wallet, hiddenByCompose: Boolean = false, compact: Boolean = false): HudUiState {
     val room = game.room
     return HudUiState(
         visible = game.inRoom && !hiddenByCompose,
+        mode = if (hiddenByCompose) HudMode.Hidden else if (compact) HudMode.Compact else HudMode.Full,
+        roomName = room?.name?.ifEmpty { LOBBY_NAME }.orEmpty(),
+        visibility = room?.visibility.orEmpty(),
+        silverAmount = if (wallet.loaded) wallet.silver else null,
+        goldAmount = if (wallet.loaded) wallet.gold else null,
         roomTitle = room?.let { roomTitle(it.name, it.visibility) }.orEmpty(),
         isOwner = game.isOwnRoom,
         silver = if (wallet.loaded) formatAmount(wallet.silver) else "-",
@@ -72,7 +83,9 @@ class HudViewModel(
     visibility: HudVisibility,
 ) : ViewModel() {
     val ui: StateFlow<HudUiState> =
-        combine(gameState.state, wallet.state, visibility.visible) { game, w, visible -> hudUi(game, w, !visible) }
+        combine(gameState.state, wallet.state, visibility.mode) { game, w, mode ->
+            hudUi(game, w, hiddenByCompose = mode == HudMode.Hidden, compact = mode == HudMode.Compact)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HudUiState())
 
     fun toggleBuild() = build.set(!ui.value.buildMode)
