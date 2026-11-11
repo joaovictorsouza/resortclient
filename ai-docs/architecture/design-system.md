@@ -1,6 +1,6 @@
 # Design system do Resort Game (cliente Compose)
 
-Fonte da verdade do visual da UI Compose do host KMP. O plano completo (identidade, telas, fases) está em `design-system-do-jogo.md`; este arquivo guarda **as regras e onde está o código**. Fase 1 entregue: fundação, HUD e painel adaptativo. Loja, Inventário, Navegador e Criador ainda usam `GameWindow` (herdam só as cores, pelo mapeamento do Material3).
+Fonte da verdade do visual da UI Compose do host KMP. O plano completo (identidade, telas, fases) está em `design-system-do-jogo.md`; este arquivo guarda **as regras e onde está o código**. Fase 1 entregue: fundação, HUD e painel adaptativo. Fase 2 entregue: Inventário e Loja no `AdaptivePanel`. Navegador, Criador e RoomUi ainda usam `GameWindow` (herdam só as cores, pelo mapeamento do Material3).
 
 ## Onde fica
 
@@ -10,7 +10,7 @@ Pacote `br.eng.joaovictor.resort.ds` no módulo `shared` (`commonMain`). **Regra
 ds/theme/       ResortColors, ResortTypography, ResortDimens (Space, Radius, Size, Motion), ResortTheme, GameFeedback, Contrast
 ds/icons/       GameIcons (vetores próprios, sem emoji e sem material-icons-extended)
 ds/layout/      PanelSpec, AdaptivePanel, SidePanel, BottomSheet, PanelParts (header, footer, seção)
-ds/components/  GameButton, GameIconButton, CurrencyPill, Badge, GameTabs/CategoryChips, EmptyState,
+ds/components/  Tiles (ItemTile, OfferTile, PriceTag), CategoryRail, SearchField, Skeleton, GameButton, GameIconButton, CurrencyPill, Badge, GameTabs/CategoryChips, EmptyState,
                 ConfirmDialog, Toast/ToastHost, ActionDock, RoomPill, SolidShadow
 ds/format/      formatGroupedAmount
 ```
@@ -40,6 +40,13 @@ ds/format/      formatGroupedAmount
 
 `HudVisibility` tem três modos (`HudMode`): **Full**, **Compact** (painel aberto: fica só a pill da sala e as moedas) e **Hidden** (criador, onboarding, diálogo). Quem precisa pede `compact(owner)` ou `hide(owner)` e solta com `release(owner)`; vale o mais restritivo. `hide`/`show` continuam funcionando para as telas antigas. `HudUiState` só ganhou campos (`roomName`, `visibility`, `silverAmount`, `goldAmount`, `mode`); `HudActions` não mudou. O dock vem de `dockActions(ui)`: visitante (Salas, Itens, Loja), dono (+ Construir) e dono em modo construção (Itens, Concluir). Configurações da sala saíram do dock: tocar na pill abre as configurações (dono) ou o Navegador (visitante) até o menu da pill da fase 5.
 
+## Inventário e Loja (fase 2)
+
+Os dois são `AdaptivePanel`: painel lateral com `CategoryRail` em paisagem, bottom sheet com `CategoryChips` em retrato. A busca é um botão no cabeçalho que abre um `SearchField` abaixo dele (`toggleSearch` continua valendo). A Loja mostra o saldo (`CurrencyPill` compacta) no cabeçalho e a barra de compra no rodapé fixo (`GameButton` com `loading` enquanto compra). Os dois pedem `HudMode.Compact` (`CompactHudWhileVisible`), não escondem mais o HUD.
+
+- `ItemTile` e `OfferTile` recebem `TileState` (selecionado, bloqueado, novo, raridade, quantidade) e a miniatura por slot, para `ds/` não depender de `components/`. Bloqueado continua tocável (mostra o motivo); preço sem saldo em `dangerText` com cadeado.
+- Arrasto do Inventário: o toque longo fica na tela (`dragModifier`); ao sair do painel ele recolhe (`tucked`) e a cena inteira fica livre para posicionar o móvel, como a janela sumia antes. Funções puras: `leftWindow`, `dragPhase`, `inventoryTileState`, `shopRail`, `offerTileState`, `buyLabel`, `tileDescription`.
+
 ## Como adicionar um componente
 
 1. Arquivo em `ds/components/`, composable sem estado, cores e tipos só do `ResortTheme`.
@@ -49,4 +56,4 @@ ds/format/      formatGroupedAmount
 
 ## Fora da fase 1 (decisões em aberto)
 
-Fonte própria, raridade/"novo" nos dados, `QuantityStepper`, `ItemTile`/`OfferTile`, `SearchField`, `Skeleton`, `CategoryRail`, `PanelHost`, `ContextActionBar`, `Popover`, sons (`ui_sound`), `ui_occlusion` para a câmera e testes de UI com `compose.uiTest` seguem o plano nas fases 2 a 8.
+Fonte própria, raridade/"novo" nos dados, `QuantityStepper`, `PanelHost`, `ContextActionBar`, `Popover`, sons (`ui_sound`), `ui_occlusion` para a câmera e testes de UI com `compose.uiTest` seguem o plano nas fases 2 a 8.

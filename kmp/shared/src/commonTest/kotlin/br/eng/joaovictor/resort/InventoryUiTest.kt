@@ -11,7 +11,6 @@ import br.eng.joaovictor.resort.views.hud.HudVisibility
 import br.eng.joaovictor.resort.views.inventory.ALL_CATEGORIES
 import br.eng.joaovictor.resort.views.inventory.INVENTORY_HUD_OWNER
 import br.eng.joaovictor.resort.views.inventory.SearchToggle
-import br.eng.joaovictor.resort.views.inventory.WINDOW_HEIGHT_FRACTION
 import br.eng.joaovictor.resort.views.inventory.toggleSearch
 import br.eng.joaovictor.resort.views.inventory.dragPhase
 import br.eng.joaovictor.resort.views.inventory.dropOutside
@@ -109,10 +108,10 @@ class InventoryUiTest {
     }
 
     @Test
-    fun theWindowTakesAboutNinetyPercentOfTheHeightAndStillClamps() {
-        assertEquals(0.9f, WINDOW_HEIGHT_FRACTION)
+    fun aFloatingWindowStillClampsToTheBottomEdge() {
+        // GameWindow (Navigator, Creator) keeps clampWindow; the inventory itself is an AdaptivePanel now.
         val maxH = 400f
-        val winH = maxH * WINDOW_HEIGHT_FRACTION
+        val winH = maxH * 0.9f
         // Dragged far down it stops at the bottom edge of the area.
         assertEquals(maxH - winH, clampWindow(Offset(0f, 999f), 800f, maxH, 300f, winH).y)
     }

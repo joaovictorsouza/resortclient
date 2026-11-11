@@ -1,28 +1,19 @@
 package br.eng.joaovictor.resort.views.shop
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,28 +22,45 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import br.eng.joaovictor.resort.components.GameThumbnail
-import br.eng.joaovictor.resort.components.GameWindow
-import br.eng.joaovictor.resort.components.SearchSection
-import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
-import br.eng.joaovictor.resort.views.hud.formatAmount
+import br.eng.joaovictor.resort.ds.components.ButtonSize
+import br.eng.joaovictor.resort.ds.components.CategoryChips
+import br.eng.joaovictor.resort.ds.components.CategoryRail
+import br.eng.joaovictor.resort.ds.components.ChipItem
+import br.eng.joaovictor.resort.ds.components.Currency
+import br.eng.joaovictor.resort.ds.components.CurrencyPill
+import br.eng.joaovictor.resort.ds.components.EmptyState
+import br.eng.joaovictor.resort.ds.components.GameButton
+import br.eng.joaovictor.resort.ds.components.GameIconButton
+import br.eng.joaovictor.resort.ds.components.IconButtonStyle
+import br.eng.joaovictor.resort.ds.components.LockReason
+import br.eng.joaovictor.resort.ds.components.OfferTile
+import br.eng.joaovictor.resort.ds.components.Price
+import br.eng.joaovictor.resort.ds.components.PriceTag
+import br.eng.joaovictor.resort.ds.components.RailItem
+import br.eng.joaovictor.resort.ds.components.SearchField
+import br.eng.joaovictor.resort.ds.components.SkeletonGrid
+import br.eng.joaovictor.resort.ds.components.TileState
+import br.eng.joaovictor.resort.ds.icons.GameIcons
+import br.eng.joaovictor.resort.ds.layout.AdaptivePanel
+import br.eng.joaovictor.resort.ds.layout.PanelForm
+import br.eng.joaovictor.resort.ds.layout.PanelSpec
+import br.eng.joaovictor.resort.ds.layout.panelSpecFor
+import br.eng.joaovictor.resort.ds.layout.rememberPanelSpec
+import br.eng.joaovictor.resort.ds.theme.ResortTheme
+import br.eng.joaovictor.resort.ds.theme.Space
+import br.eng.joaovictor.resort.ds.theme.Size as DsSize
+import br.eng.joaovictor.resort.views.hud.CompactHudWhileVisible
 import br.eng.joaovictor.resort.views.inventory.toggleSearch
 import br.eng.joaovictor.resort.views.preview.PreviewData
 import br.eng.joaovictor.resort.views.preview.PreviewScene
-import androidx.compose.ui.tooling.preview.Preview
 
-/** The HUD owner name the shop holds while open (see `HudVisibility`). */
+/** The HUD owner name the shop holds while open (see `HudVisibility`); the HUD shrinks to Compact. */
 internal const val SHOP_HUD_OWNER = "shop"
-
-private val Selected = Color(0xFF4F46E5)
-private val Buy = Color(0xFF059669)
-private val SilverDot = Color(0xFFC0C6D0)
-private val GoldDot = Color(0xFFFFC107)
 
 /** What the shop can ask for; previews pass no-ops. */
 class ShopActions(
@@ -63,12 +71,35 @@ class ShopActions(
     val onBuy: () -> Unit = {},
 )
 
-/** Collects the state and holds the HUD hidden while the shop is open. */
+/** The top-level category that holds the selection (itself or the parent of the selected sub-category). */
+fun shopSection(ui: ShopUiState): String? =
+    ui.subCategories.firstOrNull { it.id == ui.selectedCategory }?.parent ?: ui.selectedCategory
+
+/** Rail entries: the top-level categories; the one holding the selection is expanded with its sub-categories. */
+fun shopRail(ui: ShopUiState): List<RailItem> {
+    val section = shopSection(ui)
+    return ui.topCategories.map { top ->
+        val open = top.id == section && ui.subCategories.isNotEmpty()
+        RailItem(top.id, top.name, if (open) ui.subCategories.map { RailItem(it.id, it.name) } else emptyList(), expanded = open)
+    }
+}
+
+fun offerPrice(tile: ShopTile) = Price(tile.priceSilver, tile.priceGold)
+
+/** A tile the wallet cannot cover is locked (price in red, padlock) but stays tappable to show the reason. */
+fun offerTileState(tile: ShopTile): TileState =
+    TileState(selected = tile.selected, locked = if (tile.affordable) null else LockReason.CannotAfford)
+
+/** Label of the buy button. */
+fun buyLabel(ui: ShopUiState): String =
+    if (ui.selected != null && !ui.selected.affordable) "Saldo insuficiente" else "Comprar"
+
+/** Collects the state and shrinks the HUD to Compact while the shop is open. */
 @Composable
 fun ShopView(viewModel: ShopViewModel) {
     val ui by viewModel.ui.collectAsState()
     if (!ui.open) return
-    HideHudWhileVisible(SHOP_HUD_OWNER)
+    CompactHudWhileVisible(SHOP_HUD_OWNER)
     val actions = remember(viewModel) {
         ShopActions(viewModel::close, viewModel::selectCategory, viewModel::setQuery, viewModel::selectOffer, viewModel::buy)
     }
@@ -85,182 +116,150 @@ fun ShopView(viewModel: ShopViewModel) {
     )
 }
 
-/** Stateless shop window: categories, an offers grid and a buy bar for the selected offer. */
+/**
+ * Stateless shop in the adaptive panel: the balance and search in the header, categories (rail in landscape,
+ * chips in portrait), the offers grid and a sticky buy bar.
+ */
 @Composable
 fun ShopContent(
     ui: ShopUiState,
     actions: ShopActions,
     searchOpen: Boolean = ui.query.isNotEmpty(),
     onToggleSearch: () -> Unit = {},
+    spec: PanelSpec = rememberPanelSpec(),
 ) {
-    GameWindow(
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(searchOpen) { if (!searchOpen) keyboard?.hide() }
+    AdaptivePanel(
+        visible = true,
         title = "Loja",
         onClose = actions.onClose,
-        maxWidth = 760.dp,
-        widthFraction = 0.85f,
-        searchOpen = searchOpen,
-        onToggleSearch = onToggleSearch,
+        icon = GameIcons.Shop,
+        headerActions = {
+            CurrencyPill(Currency.Silver, if (ui.walletLoaded) ui.silver else null, compact = true)
+            CurrencyPill(Currency.Gold, if (ui.walletLoaded) ui.gold else null, compact = true)
+            GameIconButton(GameIcons.Search, "Buscar", onToggleSearch, style = IconButtonStyle.Raised, active = searchOpen)
+        },
+        footer = { BuyBar(ui, actions.onBuy) },
+        spec = spec,
     ) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SearchSection(open = searchOpen, query = ui.query, onQuery = actions.onQuery)
-            // A search looks at every category, so the category chips only apply while it is blank.
-            CategoryRow(ui.topCategories.map { it.id to it.name }, ui.selectedCategory, actions.onCategory)
-            if (ui.subCategories.isNotEmpty()) {
-                CategoryRow(ui.subCategories.map { it.id to it.name }, ui.selectedCategory, actions.onCategory)
-            }
-        }
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                ui.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                ui.isEmpty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(if (ui.query.isNotBlank()) "Nenhum item encontrado" else "Nada à venda aqui")
-                }
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Adaptive(minSize = 96.dp),
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(ui.tiles, key = { it.catalogId }) { tile -> OfferTile(tile) { actions.onSelect(tile.catalogId) } }
-                }
-            }
-        }
-        BuyBar(ui, actions.onBuy)
-    }
-}
-
-@Composable
-private fun CategoryRow(entries: List<Pair<String, String>>, selected: String?, onPick: (String) -> Unit) {
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        items(entries, key = { it.first }) { (id, name) ->
-            val on = id == selected
-            Text(
-                name,
-                color = Color.White,
-                fontSize = 13.sp,
-                modifier = Modifier
-                    .background(if (on) Selected else Color.White.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
-                    .clickable { onPick(id) }
-                    .padding(horizontal = 10.dp, vertical = 5.dp),
+        if (searchOpen) {
+            SearchField(
+                ui.query, actions.onQuery, "Buscar",
+                Modifier.fillMaxWidth().padding(horizontal = Space.md, vertical = Space.xs),
+                autoFocus = true,
             )
         }
-    }
-}
-
-@Composable
-private fun OfferTile(tile: ShopTile, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(10.dp)
-    Box(
-        Modifier.fillMaxWidth().aspectRatio(1f).clip(shape)
-            .background(if (tile.selected) Selected.copy(alpha = 0.35f) else Color.White.copy(alpha = 0.06f))
-            .border(if (tile.selected) 2.dp else 1.dp, if (tile.selected) Selected else Color.White.copy(alpha = 0.12f), shape)
-            .clickable(onClick = onClick),
-    ) {
-        GameThumbnail(tile.thumbnail, tile.name, Modifier.fillMaxSize().padding(bottom = 34.dp))
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 4.dp, vertical = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(tile.name, color = Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            PriceChips(tile.priceSilver, tile.priceGold, dim = !tile.affordable)
+        if (spec.form == PanelForm.Side) {
+            Row(Modifier.weight(1f)) {
+                CategoryRail(shopRail(ui), ui.selectedCategory, actions.onCategory)
+                Offers(ui, actions, Modifier.weight(1f))
+            }
+        } else {
+            CategoryChips(ui.topCategories.map { ChipItem(it.id, it.name) }, shopSection(ui), actions.onCategory, Modifier.padding(horizontal = Space.md))
+            if (ui.subCategories.isNotEmpty()) {
+                CategoryChips(ui.subCategories.map { ChipItem(it.id, it.name) }, ui.selectedCategory, actions.onCategory, Modifier.padding(horizontal = Space.md))
+            }
+            Offers(ui, actions, Modifier.weight(1f))
         }
     }
 }
 
-/** Silver and gold prices as small dot + amount chips; a price of zero is left out. */
 @Composable
-private fun PriceChips(silver: Long, gold: Long, dim: Boolean = false) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (silver > 0) PriceChip(SilverDot, silver, dim)
-        if (gold > 0) PriceChip(GoldDot, gold, dim)
-        if (silver == 0L && gold == 0L) Text("Grátis", color = Color.White, fontSize = 11.sp)
+private fun Offers(ui: ShopUiState, actions: ShopActions, modifier: Modifier) {
+    Box(modifier.fillMaxWidth()) {
+        when {
+            ui.loading -> SkeletonGrid(minSize = 96.dp, tileAspect = 0.78f)
+            ui.isEmpty -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (ui.query.isNotBlank()) {
+                    EmptyState(GameIcons.Search, "Nenhum item encontrado", action = "Limpar busca" to { actions.onQuery("") })
+                } else {
+                    EmptyState(GameIcons.Shop, "Nada à venda aqui")
+                }
+            }
+            else -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 96.dp),
+                modifier = Modifier.padding(horizontal = Space.md),
+                horizontalArrangement = Arrangement.spacedBy(Space.sm),
+                verticalArrangement = Arrangement.spacedBy(Space.sm),
+            ) {
+                items(ui.tiles, key = { it.catalogId }, contentType = { "offer" }) { tile ->
+                    OfferTile(
+                        tile.name, offerPrice(tile), offerTileState(tile), { actions.onSelect(tile.catalogId) },
+                        thumbnail = { m -> GameThumbnail(tile.thumbnail, tile.name, m) },
+                    )
+                }
+            }
+        }
     }
 }
 
-@Composable
-private fun PriceChip(dot: Color, amount: Long, dim: Boolean) {
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(8.dp).background(dot, CircleShape))
-        Text(formatAmount(amount), color = if (dim) Color(0xFFFB7185) else Color.White, fontSize = 11.sp)
-    }
-}
-
+/** The sticky bottom bar: purchase status, the selected offer and its price, and the buy button. */
 @Composable
 private fun BuyBar(ui: ShopUiState, onBuy: () -> Unit) {
-    Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha = 0.06f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    val colors = ResortTheme.colors
+    Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
         ui.status?.let {
-            Text(it.text, color = if (it.kind == "success") Color(0xFF34D399) else Color(0xFFFB7185), fontSize = 12.sp)
+            Text(it.text, style = ResortTheme.type.caption, color = if (it.kind == "success") colors.success else colors.dangerText)
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
             Column(Modifier.weight(1f)) {
                 val sel = ui.selected
                 if (sel == null) {
-                    Text("Escolha um item", color = Color.White.copy(alpha = 0.7f), fontSize = 13.sp)
+                    Text("Escolha um item", style = ResortTheme.type.body, color = colors.textMuted)
                 } else {
-                    Text(sel.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    PriceChips(sel.priceSilver, sel.priceGold, dim = !sel.affordable)
+                    Text(sel.name, style = ResortTheme.type.titleSmall, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    PriceTag(offerPrice(sel), dim = !sel.affordable)
                 }
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("Seu saldo", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    PriceChip(SilverDot, if (ui.walletLoaded) ui.silver else 0, false)
-                    PriceChip(GoldDot, if (ui.walletLoaded) ui.gold else 0, false)
-                }
-            }
-            Button(onClick = onBuy, enabled = ui.canBuy) {
-                Text(
-                    when {
-                        ui.buying -> "Comprando…"
-                        ui.selected != null && !ui.selected.affordable -> "Saldo insuficiente"
-                        else -> "Comprar"
-                    },
-                )
-            }
+            GameButton(buyLabel(ui), onBuy, size = ButtonSize.Large, enabled = ui.canBuy || ui.buying, loading = ui.buying)
         }
     }
 }
 
 // ---- Previews (IDE only; see ai-docs/process/previews-compose.md) ----
 
+private val LandscapeSpec = panelSpecFor(800.dp, 360.dp)
+private val PortraitSpec = panelSpecFor(360.dp, 780.dp)
+
 @Preview(name = "Shop, offer selected (landscape)", widthDp = 800, heightDp = 360)
 @Composable
-private fun ShopSelectedPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded, ShopActions()) }
+private fun ShopSelectedPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded, ShopActions(), spec = LandscapeSpec) }
 
 @Preview(name = "Shop, cannot afford", widthDp = 800, heightDp = 360)
 @Composable
-private fun ShopCannotAffordPreview() = PreviewScene { ShopContent(PreviewData.shopPoor, ShopActions()) }
+private fun ShopCannotAffordPreview() = PreviewScene { ShopContent(PreviewData.shopPoor, ShopActions(), spec = LandscapeSpec) }
 
 @Preview(name = "Shop, buying (pending)", widthDp = 800, heightDp = 360)
 @Composable
-private fun ShopBuyingPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(buying = true), ShopActions()) }
+private fun ShopBuyingPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(buying = true), ShopActions(), spec = LandscapeSpec) }
 
 @Preview(name = "Shop, success status", widthDp = 800, heightDp = 360)
 @Composable
 private fun ShopSuccessPreview() = PreviewScene {
-    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("success", "Poltrona comprada!")), ShopActions())
+    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("success", "Poltrona comprada!")), ShopActions(), spec = LandscapeSpec)
 }
 
 @Preview(name = "Shop, error status", widthDp = 800, heightDp = 360)
 @Composable
 private fun ShopErrorPreview() = PreviewScene {
-    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("error", "Saldo insuficiente.")), ShopActions())
+    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("error", "Saldo insuficiente.")), ShopActions(), spec = LandscapeSpec)
 }
 
 @Preview(name = "Shop, loading", widthDp = 800, heightDp = 360)
 @Composable
-private fun ShopLoadingPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(loading = true, tiles = emptyList(), selected = null), ShopActions()) }
+private fun ShopLoadingPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(loading = true, tiles = emptyList(), selected = null), ShopActions(), spec = LandscapeSpec) }
 
 @Preview(name = "Shop, empty", widthDp = 800, heightDp = 360)
 @Composable
-private fun ShopEmptyPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(tiles = emptyList(), selected = null), ShopActions()) }
+private fun ShopEmptyPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(tiles = emptyList(), selected = null), ShopActions(), spec = LandscapeSpec) }
 
 @Preview(name = "Shop, search open, no result", widthDp = 800, heightDp = 360)
 @Composable
 private fun ShopSearchPreview() = PreviewScene {
-    ShopContent(PreviewData.shopLoaded.copy(query = "zzz", tiles = emptyList(), selected = null), ShopActions(), searchOpen = true)
+    ShopContent(PreviewData.shopLoaded.copy(query = "zzz", tiles = emptyList(), selected = null), ShopActions(), spec = LandscapeSpec, searchOpen = true)
 }
 
 @Preview(name = "Shop (portrait)", widthDp = 360, heightDp = 780)
 @Composable
-private fun ShopPortraitPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded, ShopActions()) }
+private fun ShopPortraitPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded, ShopActions(), spec = PortraitSpec) }
