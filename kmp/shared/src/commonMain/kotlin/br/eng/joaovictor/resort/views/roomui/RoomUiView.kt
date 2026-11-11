@@ -36,7 +36,7 @@ import br.eng.joaovictor.resort.models.SettingsInfo
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import br.eng.joaovictor.resort.views.preview.PreviewData
 import br.eng.joaovictor.resort.views.preview.PreviewScene
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 private val Selected = Color(0xFF4F46E5)
 private val Danger = Color(0xFFE11D48)

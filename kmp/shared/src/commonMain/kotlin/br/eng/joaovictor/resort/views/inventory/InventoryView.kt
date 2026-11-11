@@ -75,7 +75,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import br.eng.joaovictor.resort.views.preview.PreviewData
 import br.eng.joaovictor.resort.views.preview.PreviewScene
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 /** The HUD owner name the window holds while open (see `HudVisibility`). */
 internal const val INVENTORY_HUD_OWNER = "inventory"

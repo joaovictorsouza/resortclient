@@ -32,7 +32,7 @@ import br.eng.joaovictor.resort.components.GameWindow
 import br.eng.joaovictor.resort.views.hud.HideHudWhileVisible
 import br.eng.joaovictor.resort.views.preview.PreviewData
 import br.eng.joaovictor.resort.views.preview.PreviewScene
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 /** The HUD owner name the navigator holds while open (see `HudVisibility`). */
 internal const val NAVIGATOR_HUD_OWNER = "navigator"
