@@ -1,6 +1,8 @@
 package br.eng.joaovictor.resort.ds.layout
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -55,10 +57,16 @@ fun SidePanel(
     footer: (@Composable () -> Unit)? = null,
     tucked: Boolean = false,
     onBoundsChange: (Rect) -> Unit = {},
+    /** Another panel was open a moment ago: fade in over it instead of sliding in. */
+    swapIn: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // 0 = fully shown, 1 = fully out; a tucked panel leaves its handle in view.
-    val hidden = remember { Animatable(if (visible) 0f else 1f) }
+    // 0 = fully shown, 1 = fully out; a tucked panel leaves its handle in view. A new panel slides in from
+    // the edge (previews and swaps start in place).
+    val inPlace = LocalInspectionMode.current || swapIn
+    val hidden = remember { Animatable(if (visible && inPlace) 0f else 1f) }
+    val fade = remember { Animatable(if (swapIn) 0.5f else 1f) }
+    LaunchedEffect(Unit) { if (swapIn) fade.animateTo(1f, tween(Motion.base)) }
     val tuckedFraction = 1f - DsSize.tuckedHandle.value / width.value
     LaunchedEffect(visible, tucked, tuckedFraction) {
         hidden.animateTo(if (!visible) 1f else if (tucked) tuckedFraction else 0f, Motion.panelSpring)
@@ -73,7 +81,7 @@ fun SidePanel(
                 .align(Alignment.CenterEnd)
                 .width(width)
                 .fillMaxHeight()
-                .graphicsLayer { translationX = hidden.value * size.width }
+                .graphicsLayer { translationX = hidden.value * size.width; alpha = fade.value }
                 .onGloballyPositioned { onBoundsChange(it.boundsInRoot()) }
                 .drawSolidShadow(corner = Radius.xl)
                 .background(colors.surface, shape)

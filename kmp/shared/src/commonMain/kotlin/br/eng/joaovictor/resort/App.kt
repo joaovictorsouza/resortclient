@@ -6,13 +6,22 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import br.eng.joaovictor.bevykmp.BevyHostEffects
 import br.eng.joaovictor.bevykmp.BevyView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import br.eng.joaovictor.resort.components.LocalThumbnailLoader
+import br.eng.joaovictor.resort.ds.components.LocalToastHost
+import br.eng.joaovictor.resort.ds.components.ToastHost
+import br.eng.joaovictor.resort.ds.components.ToastHostState
+import br.eng.joaovictor.resort.ds.layout.LocalPanelHost
+import br.eng.joaovictor.resort.ds.layout.PanelHostState
 import br.eng.joaovictor.resort.ds.theme.ResortTheme
 import br.eng.joaovictor.resort.ds.theme.rememberGameFeedback
 import br.eng.joaovictor.resort.game.GameHost
@@ -60,7 +69,11 @@ fun App(game: GameHost) {
                     game.inventory, game.hudCommands, game.hudVisibility,
                 )
             }
+            val toastHost = remember { ToastHostState() }
+            val panelHost = remember { PanelHostState() }
             CompositionLocalProvider(
+                LocalToastHost provides toastHost,
+                LocalPanelHost provides panelHost,
                 LocalHudVisibility provides game.hudVisibility,
                 LocalThumbnailLoader provides ::loadImageFile,
             ) {
@@ -75,6 +88,7 @@ fun App(game: GameHost) {
                 CreatorView(creatorViewModel)
                 val roomUiViewModel = viewModel { RoomUiViewModel(game.roomUi) }
                 RoomUiView(roomUiViewModel)
+                ToastHost(toastHost, onAction = {}, modifier = Modifier.safeDrawingPadding().padding(top = 8.dp))
             }
             error?.let { Text("Bevy error: $it", color = MaterialTheme.colorScheme.error) }
         }

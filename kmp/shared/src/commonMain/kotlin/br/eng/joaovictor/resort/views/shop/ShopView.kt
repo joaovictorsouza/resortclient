@@ -37,7 +37,10 @@ import br.eng.joaovictor.resort.ds.components.EmptyState
 import br.eng.joaovictor.resort.ds.components.GameButton
 import br.eng.joaovictor.resort.ds.components.GameIconButton
 import br.eng.joaovictor.resort.ds.components.IconButtonStyle
+import br.eng.joaovictor.resort.ds.components.LocalToastHost
 import br.eng.joaovictor.resort.ds.components.LockReason
+import br.eng.joaovictor.resort.ds.components.ToastKind
+import br.eng.joaovictor.resort.models.StatusLine
 import br.eng.joaovictor.resort.ds.components.OfferTile
 import br.eng.joaovictor.resort.ds.components.Price
 import br.eng.joaovictor.resort.ds.components.PriceTag
@@ -90,6 +93,9 @@ fun offerPrice(tile: ShopTile) = Price(tile.priceSilver, tile.priceGold)
 fun offerTileState(tile: ShopTile): TileState =
     TileState(selected = tile.selected, locked = if (tile.affordable) null else LockReason.CannotAfford)
 
+/** A purchase result is a toast: success in green, anything else as an error. */
+fun purchaseToastKind(status: StatusLine): ToastKind = if (status.kind == "success") ToastKind.Success else ToastKind.Error
+
 /** Label of the buy button. */
 fun buyLabel(ui: ShopUiState): String =
     if (ui.selected != null && !ui.selected.affordable) "Saldo insuficiente" else "Comprar"
@@ -100,6 +106,8 @@ fun ShopView(viewModel: ShopViewModel) {
     val ui by viewModel.ui.collectAsState()
     if (!ui.open) return
     CompactHudWhileVisible(SHOP_HUD_OWNER)
+    val toasts = LocalToastHost.current
+    LaunchedEffect(ui.status) { ui.status?.let { toasts?.post(purchaseToastKind(it), it.text) } }
     val actions = remember(viewModel) {
         ShopActions(viewModel::close, viewModel::selectCategory, viewModel::setQuery, viewModel::selectOffer, viewModel::buy)
     }
@@ -142,6 +150,7 @@ fun ShopContent(
         },
         footer = { BuyBar(ui, actions.onBuy) },
         spec = spec,
+        panelKey = "shop",
     ) {
         if (searchOpen) {
             SearchField(
@@ -199,9 +208,6 @@ private fun Offers(ui: ShopUiState, actions: ShopActions, modifier: Modifier) {
 private fun BuyBar(ui: ShopUiState, onBuy: () -> Unit) {
     val colors = ResortTheme.colors
     Column(verticalArrangement = Arrangement.spacedBy(Space.xs)) {
-        ui.status?.let {
-            Text(it.text, style = ResortTheme.type.caption, color = if (it.kind == "success") colors.success else colors.dangerText)
-        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Space.md)) {
             Column(Modifier.weight(1f)) {
                 val sel = ui.selected
@@ -233,18 +239,6 @@ private fun ShopCannotAffordPreview() = PreviewScene { ShopContent(PreviewData.s
 @Preview(name = "Shop, buying (pending)", widthDp = 800, heightDp = 360)
 @Composable
 private fun ShopBuyingPreview() = PreviewScene { ShopContent(PreviewData.shopLoaded.copy(buying = true), ShopActions(), spec = LandscapeSpec) }
-
-@Preview(name = "Shop, success status", widthDp = 800, heightDp = 360)
-@Composable
-private fun ShopSuccessPreview() = PreviewScene {
-    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("success", "Poltrona comprada!")), ShopActions(), spec = LandscapeSpec)
-}
-
-@Preview(name = "Shop, error status", widthDp = 800, heightDp = 360)
-@Composable
-private fun ShopErrorPreview() = PreviewScene {
-    ShopContent(PreviewData.shopLoaded.copy(status = br.eng.joaovictor.resort.models.StatusLine("error", "Saldo insuficiente.")), ShopActions(), spec = LandscapeSpec)
-}
 
 @Preview(name = "Shop, loading", widthDp = 800, heightDp = 360)
 @Composable
