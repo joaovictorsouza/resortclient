@@ -30,11 +30,11 @@ Telas cobertas: `HudView`/`HudContent`, `InventoryView`/`InventoryContent` e `On
 3. Abra o arquivo da tela (`views/hud/HudView.kt`, `views/inventory/InventoryView.kt`, `Onboarding.kt`) e abra o painel **Preview** (ícone na lateral do editor ou no gutter ao lado de cada `@Preview`); os previews estão no fim do arquivo. O Compose Multiplatform renderiza os `@Preview` do `commonMain`.
 4. Cada função tem `name`, `widthDp` e `heightDp`: paisagem (800x360) e retrato (360x780).
 
-Dependências (já no projeto): `org.jetbrains.compose.ui.tooling.preview.Preview` vem de `components-ui-tooling-preview` no `commonMain`; o Android usa `ui-tooling` em `debugImplementation`. Ambas no catálogo `kmp/gradle/libs.versions.toml`, na versão do Compose Multiplatform.
+Dependências (já no projeto): `androidx.compose.ui.tooling.preview.Preview` vem de `org.jetbrains.compose.ui:ui-tooling-preview` no `commonMain`; o Android usa `ui-tooling` em `debugImplementation`. Ambas no catálogo `kmp/gradle/libs.versions.toml`, na versão do Compose Multiplatform.
 
 ## Dados falsos: `PreviewData`
 
-`views/preview/PreviewData.kt` guarda os estados de UI falsos (`hudInRoom`, `inventoryLoaded`, `onboardingLogin`...). Cada preview parte de um e usa `.copy(...)` para o estado que quer mostrar. `PreviewScene` (mesma pasta) põe um fundo escuro parecido com a cena sob o tema, para sobreposições translúcidas lerem como no jogo.
+`views/preview/PreviewData.kt` guarda os estados de UI falsos (`hudInRoom`, `inventoryLoaded`, `onboardingLogin`...). Cada preview parte de um e usa `.copy(...)` para o estado que quer mostrar. `PreviewScene` (mesma pasta) põe um fundo parecido com a cena sob o `ResortTheme` (o tema do [design system](../architecture/design-system.md); dentro de `ds/` use `DsPreviewScene`), para sobreposições translúcidas lerem como no jogo.
 
 ## Imagens (miniaturas)
 
