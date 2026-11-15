@@ -41,7 +41,7 @@ import androidx.compose.ui.unit.sp
 import br.eng.joaovictor.resort.components.GameThumbnail
 import br.eng.joaovictor.resort.views.preview.PreviewData
 import br.eng.joaovictor.resort.views.preview.PreviewScene
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 private val Selected = Color(0xFF4F46E5)
 private val Confirm = Color(0xFF059669)

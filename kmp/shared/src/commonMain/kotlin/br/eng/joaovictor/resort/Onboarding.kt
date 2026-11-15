@@ -28,7 +28,7 @@ import br.eng.joaovictor.resort.game.BevyJson
 import kotlinx.serialization.Serializable
 import androidx.compose.material3.darkColorScheme
 import br.eng.joaovictor.resort.views.preview.PreviewData
-import org.jetbrains.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.Preview
 
 private const val NICKNAME_MAX_LEN = 16
 
