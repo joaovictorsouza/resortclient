@@ -1,6 +1,9 @@
 package br.eng.joaovictor.resort.ds.layout
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -76,6 +79,8 @@ fun BottomSheet(
     /** Lowers the sheet to Peek without closing it. */
     tucked: Boolean = false,
     onBoundsChange: (Rect) -> Unit = {},
+    /** Another panel was open a moment ago: fade in over it instead of sliding up. */
+    swapIn: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -90,7 +95,10 @@ fun BottomSheet(
     }
     val state = remember { AnchoredDraggableState(initialValue = initialDetent) }
     SideEffect { state.updateAnchors(anchors) }
-    val shown = remember { Animatable(if (visible) 1f else 0f) }
+    val inPlace = LocalInspectionMode.current || swapIn
+    val shown = remember { Animatable(if (visible && inPlace) 1f else 0f) }
+    val fade = remember { Animatable(if (swapIn) 0.5f else 1f) }
+    LaunchedEffect(Unit) { if (swapIn) fade.animateTo(1f, tween(Motion.base)) }
     LaunchedEffect(visible) { shown.animateTo(if (visible) 1f else 0f, Motion.panelSpring) }
     LaunchedEffect(tucked) {
         if (tucked) state.animateTo(SheetDetent.Peek, Motion.panelSpring) else if (state.targetValue == SheetDetent.Peek) state.animateTo(initialDetent, Motion.panelSpring)
@@ -112,6 +120,7 @@ fun BottomSheet(
                     layout(p.width, h) { p.place(0, 0) }
                 }
                 .onGloballyPositioned { onBoundsChange(it.boundsInRoot()) }
+                .graphicsLayer { alpha = fade.value }
                 .drawSolidShadow(corner = Radius.xl)
                 .background(colors.surface, shape)
                 .border(1.dp, colors.outline, shape)

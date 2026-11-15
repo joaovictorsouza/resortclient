@@ -1,6 +1,6 @@
 # Design system do Resort Game (cliente Compose)
 
-Fonte da verdade do visual da UI Compose do host KMP. O plano completo (identidade, telas, fases) está em `design-system-do-jogo.md`; este arquivo guarda **as regras e onde está o código**. Fase 1 entregue: fundação, HUD e painel adaptativo. Fase 2 entregue: Inventário e Loja no `AdaptivePanel`. Navegador, Criador e RoomUi ainda usam `GameWindow` (herdam só as cores, pelo mapeamento do Material3).
+Fonte da verdade do visual da UI Compose do host KMP. O plano completo (identidade, telas, fases) está em `design-system-do-jogo.md`; este arquivo guarda **as regras e onde está o código**. Fase 1 entregue: fundação, HUD e painel adaptativo. Fase 2 entregue: Inventário e Loja no `AdaptivePanel`. Fase 3 entregue: Navegador, `PanelHostState` e toasts. Criador e RoomUi ainda usam `GameWindow` (herdam só as cores, pelo mapeamento do Material3).
 
 ## Onde fica
 
@@ -46,6 +46,12 @@ Os dois são `AdaptivePanel`: painel lateral com `CategoryRail` em paisagem, bot
 
 - `ItemTile` e `OfferTile` recebem `TileState` (selecionado, bloqueado, novo, raridade, quantidade) e a miniatura por slot, para `ds/` não depender de `components/`. Bloqueado continua tocável (mostra o motivo); preço sem saldo em `dangerText` com cadeado.
 - Arrasto do Inventário: o toque longo fica na tela (`dragModifier`); ao sair do painel ele recolhe (`tucked`) e a cena inteira fica livre para posicionar o móvel, como a janela sumia antes. Funções puras: `leftWindow`, `dragPhase`, `inventoryTileState`, `shopRail`, `offerTileState`, `buyLabel`, `tileDescription`.
+
+## Navegador, PanelHost e toasts (fase 3)
+
+- **Navegador** no `AdaptivePanel` ("Salas"): chips Espaços, Populares, Minhas salas e Criar; a busca é a lupa do cabeçalho (`toggleNavSearch`), que abre o `SearchField` e busca no Enter. Busca continua sendo `NavTab.Search` no estado e na mensagem do Bevy; só não é chip (`NAV_CHIP_TABS`). Salas viram `RoomListCard`; a criação usa `GameTextField` (contador) e `SelectableRow` (modelos), com "Criar espaço" no rodapé fixo. Vazio com saída ("Criar espaço", "Limpar busca"), carregamento com `SkeletonList`.
+- **PanelHost**: `PanelHostState` (fornecido pelo `App`) diz quem ocupa o slot. Um painel que abre enquanto outro ainda está aberto (`claim` devolve `true`) não desliza: aparece no lugar, com fade de `base`. Cada painel passa `panelKey` ao `AdaptivePanel`. A entrada normal agora desliza da borda (antes aparecia já no lugar); previews (`LocalInspectionMode`) começam no lugar.
+- **Toasts**: `ToastHost` no `App` (topo central) e `LocalToastHost`. A Loja mostra o resultado da compra e o Navegador mostra o erro como toast, no lugar do texto no rodapé.
 
 ## Como adicionar um componente
 

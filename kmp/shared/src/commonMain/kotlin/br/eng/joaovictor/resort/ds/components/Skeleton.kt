@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -52,6 +54,19 @@ fun SkeletonGrid(modifier: Modifier = Modifier, count: Int = 8, minSize: Dp = Ds
         userScrollEnabled = false,
     ) {
         items(count, key = { it }) { Skeleton(Modifier.fillMaxWidth().aspectRatio(tileAspect), alpha = alpha) }
+    }
+}
+
+/** Rows of skeletons for a list; one shared alpha animation. */
+@Composable
+fun SkeletonList(modifier: Modifier = Modifier, count: Int = 4, rowHeight: Dp = 72.dp) {
+    val alpha = if (LocalReduceMotion.current) 0.45f else {
+        val transition = rememberInfiniteTransition()
+        val a by transition.animateFloat(0.35f, 0.6f, infiniteRepeatable(tween(700), RepeatMode.Reverse))
+        a
+    }
+    androidx.compose.foundation.layout.Column(modifier.padding(horizontal = Space.md), verticalArrangement = Arrangement.spacedBy(Space.sm)) {
+        repeat(count) { Skeleton(Modifier.fillMaxWidth().height(rowHeight), alpha = alpha) }
     }
 }
 

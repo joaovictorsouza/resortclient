@@ -57,6 +57,7 @@ data class ToastMessage(
 
 /** One toast at a time, with a queue. Plain state (no Compose), so it is testable. */
 class ToastHostState {
+    private var nextId = 1L
     private val queue = ArrayDeque<ToastMessage>()
     private val _current = MutableStateFlow<ToastMessage?>(null)
     val current: StateFlow<ToastMessage?> = _current.asStateFlow()
@@ -65,11 +66,21 @@ class ToastHostState {
         if (_current.value == null) _current.value = message else queue.addLast(message)
     }
 
+    /** Shows (or queues) a toast with a fresh id and returns the id. */
+    fun post(kind: ToastKind, text: String, actionLabel: String? = null, persistent: Boolean = false): Long {
+        val id = nextId++
+        show(ToastMessage(id, kind, text, actionLabel, persistent))
+        return id
+    }
+
     fun dismiss(id: Long) {
         queue.removeAll { it.id == id }
         if (_current.value?.id == id) _current.value = queue.removeFirstOrNull()
     }
 }
+
+/** Provided by the shell (`App`); `null` outside it, where posting a toast does nothing. */
+val LocalToastHost = androidx.compose.runtime.staticCompositionLocalOf<ToastHostState?> { null }
 
 /** The toast surface alone (also used for the persistent "Reconectando…" banner). */
 @Composable

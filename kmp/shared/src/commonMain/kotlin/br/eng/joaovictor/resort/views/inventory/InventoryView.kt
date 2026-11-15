@@ -146,6 +146,7 @@ fun InventoryContent(
             tucked = outside,
             onBoundsChange = { panelBounds = it },
             spec = spec,
+            panelKey = "inventory",
         ) {
             if (searchOpen) {
                 SearchField(

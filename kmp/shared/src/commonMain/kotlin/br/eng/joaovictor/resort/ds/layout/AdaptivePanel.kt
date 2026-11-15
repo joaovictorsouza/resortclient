@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -35,14 +37,19 @@ fun AdaptivePanel(
     tucked: Boolean = false,
     onBoundsChange: (Rect) -> Unit = {},
     spec: PanelSpec = rememberPanelSpec(),
+    /** Identifies this panel to the [PanelHostState]; panels with a key swap without a double animation. */
+    panelKey: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val host = LocalPanelHost.current
+    val swapIn = remember(panelKey, host) { panelKey != null && host != null && host.claim(panelKey) }
+    DisposableEffect(panelKey, host) { onDispose { if (panelKey != null) host?.release(panelKey) } }
     when (spec.form) {
         PanelForm.Side -> SidePanel(
-            visible, title, onClose, spec.sideWidth, modifier, icon, headerActions, footer, tucked, onBoundsChange, content,
+            visible, title, onClose, spec.sideWidth, modifier, icon, headerActions, footer, tucked, onBoundsChange, swapIn, content,
         )
         PanelForm.Sheet -> BottomSheet(
-            visible, title, onClose, spec, modifier, icon, headerActions, footer, initialDetent, tucked, onBoundsChange, content,
+            visible, title, onClose, spec, modifier, icon, headerActions, footer, initialDetent, tucked, onBoundsChange, swapIn, content,
         )
     }
 }
