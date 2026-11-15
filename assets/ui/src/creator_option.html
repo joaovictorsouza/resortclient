@@ -2,11 +2,13 @@
     <property name="category">hair</property>
     <property name="id">item</property>
     <property name="label">Item</property>
+    <property name="thumb">ui/thumbs/missing.png</property>
     <property name="bg">#1e293b</property>
     <property name="edge">#334155</property>
     <node class="flex">
-    <button on_press="cc_item" tag:category="{category}" tag:id="{id}" class="flex items-center justify-center px-3 py-2 rounded-lg bg-[{bg}] border-2 border-[{edge}] hover:bg-slate-700 duration-150">
-        <text class="font-ui text-xs text-white">{label}</text>
+    <button on_press="cc_item" tag:category="{category}" tag:id="{id}" class="flex flex-col items-center justify-center gap-1 p-1 w-[76px] rounded-lg bg-[{bg}] border-2 border-[{edge}] hover:bg-slate-700 duration-150">
+        <image src="{thumb}" class="w-16 h-16 rounded-md"/>
+        <text class="font-ui text-[10px] text-white">{label}</text>
     </button>
     </node>
 </template>

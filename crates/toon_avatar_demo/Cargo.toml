@@ -1,0 +1,24 @@
+[package]
+name = "toon_avatar_demo"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "Demonstrator for toon_avatar: the character assembly screen (not used by the game)"
+
+[lib]
+name = "toon_avatar_demo"
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = ["basis"]
+basis = ["bevy/basis-universal", "toon_avatar/basis_textures"]
+
+[dependencies]
+toon_avatar = { path = "../toon_avatar" }
+bevy = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { workspace = true, features = ["android-native-activity"] }

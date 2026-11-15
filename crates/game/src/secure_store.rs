@@ -30,7 +30,7 @@ pub fn delete(key: &str) {
     platform::delete(key)
 }
 
-#[cfg(target_os = "ios")]
+#[cfg(all(target_os = "ios", feature = "winit-host", not(feature = "kmp-host")))]
 mod platform {
     use security_framework::passwords::{
         delete_generic_password, get_generic_password, set_generic_password,
@@ -52,7 +52,11 @@ mod platform {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(all(
+    target_os = "android",
+    feature = "winit-host",
+    not(feature = "kmp-host")
+))]
 mod platform {
     use jni::objects::{JClass, JObject, JString, JValue};
     use jni::{JNIEnv, JavaVM};
@@ -149,7 +153,40 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+/// KMP host: the Kotlin shell owns the Keychain (iOS) and the Keystore (Android); the game asks
+/// for it through blocking native services (see `bevy_kmp::request_service_blocking`).
+#[cfg(all(any(target_os = "ios", target_os = "android"), feature = "kmp-host"))]
+mod platform {
+    use bevy_kmp_ffi::bevy_kmp::request_service_blocking;
+    use std::time::Duration;
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    pub fn load(key: &str) -> Option<String> {
+        let r = request_service_blocking("secure_get", key.as_bytes().to_vec(), TIMEOUT).ok()?;
+        if !r.ok {
+            return None;
+        }
+        String::from_utf8(r.payload).ok()
+    }
+
+    pub fn save(key: &str, value: &str) -> bool {
+        let payload = format!("{key}\n{value}").into_bytes();
+        request_service_blocking("secure_put", payload, TIMEOUT).is_ok_and(|r| r.ok)
+    }
+
+    pub fn delete(key: &str) {
+        let _ = request_service_blocking("secure_delete", key.as_bytes().to_vec(), TIMEOUT);
+    }
+}
+
+#[cfg(not(any(
+    all(target_os = "ios", any(feature = "winit-host", feature = "kmp-host")),
+    all(
+        target_os = "android",
+        any(feature = "winit-host", feature = "kmp-host")
+    )
+)))]
 mod platform {
     pub fn load(_key: &str) -> Option<String> {
         None

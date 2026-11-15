@@ -44,3 +44,5 @@ Trocar tamanhos fixos por limites relativos à janela:
 
 ## Estimativa
 1-2 dias, a maior parte em ajustar e olhar cada tela nos tamanhos de referência.
+
+> Nota (25/10/2026): os scripts e projetos nativos citados aqui (`run-android.sh`, `ios/`, etc.) foram removidos; veja o [ADR 0014](../decisions/0014-remocao-do-mobile-nativo-antigo.md).

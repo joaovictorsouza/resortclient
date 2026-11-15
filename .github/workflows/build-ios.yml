@@ -1,7 +1,7 @@
 name: build-ios
 
-# Manual build of the iOS IPA, UNSIGNED for now: it compiles and packs the app but does not install
-# on a device until it is signed. Signing (certificate and profile from the Environment's secrets)
+# Manual build of the iOS IPA (KMP host in kmp/iosApp), UNSIGNED for now: it compiles and packs the app but
+# does not install on a device until it is signed. Signing (certificate and profile from the Environment's secrets)
 # is a later step; see ai-docs/decisions/0012-*.md.
 on:
   workflow_dispatch:
@@ -43,12 +43,25 @@ jobs:
         run: |
           brew install xcodegen
           rustup show
-          rustup target add aarch64-apple-ios
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
       - uses: Swatinem/rust-cache@v2
-      - name: Generate the Xcode project
-        run: scripts/gen-ios-project.sh
-      - name: Build unsigned IPA
-        run: scripts/export-ipa.sh
+      - name: Build unsigned iOS app (KMP host)
+        working-directory: kmp/iosApp
+        run: |
+          xcodegen generate
+          xcodebuild -project iosApp.xcodeproj -scheme iosApp -configuration Release \
+            -destination generic/platform=iOS -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Pack unsigned IPA
+        run: |
+          APP=$(find kmp/iosApp/build/Build/Products -name 'iosApp.app' -maxdepth 3 | head -1)
+          mkdir -p target/ios/export/Payload
+          cp -R "$APP" target/ios/export/Payload/
+          (cd target/ios/export && zip -qry new_game-unsigned.ipa Payload)
       - name: Deliver IPA
         run: scripts/ci/deliver-build.sh "$ENVIRONMENT" target/ios/export/new_game-unsigned.ipa "resort-${ENVIRONMENT}-${GITHUB_RUN_NUMBER}-unsigned.ipa"
       - name: Short-lived artifact (dev only, when no private bucket is configured)

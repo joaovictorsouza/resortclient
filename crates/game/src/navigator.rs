@@ -67,6 +67,28 @@ pub struct DoorbellState {
     pub waiting_message: Option<String>,
 }
 
+/// Who owns the room being entered, as seen by `local_user_id` (the Nakama user id). Returns
+/// `(owner_id, is_owner)`; it never depends on the previously active room.
+///
+/// The server sends the owner in the room snapshot (`snapshot_owner_id`, `""` = no owner, protocol 2.0),
+/// and that is authoritative. The room lists are only a fallback for a snapshot that carries no
+/// owner id (an empty one on a room that is listed as mine), and the public rooms never have an owner.
+pub fn resolve_ownership(
+    room_id: &str,
+    snapshot_owner_id: &str,
+    local_user_id: &str,
+    my_rooms: &[RoomSummaryDto],
+) -> (Option<String>, bool) {
+    if room_id == "lobby" || room_id == "cafe" {
+        return (None, false);
+    }
+    if !snapshot_owner_id.is_empty() {
+        let mine = !local_user_id.is_empty() && snapshot_owner_id == local_user_id;
+        return (Some(snapshot_owner_id.to_string()), mine);
+    }
+    (None, my_rooms.iter().any(|r| r.room_id == room_id))
+}
+
 #[derive(Resource, Default, Debug)]
 pub struct ActiveRoomMetadata {
     pub room_id: String,
@@ -79,6 +101,15 @@ pub struct ActiveRoomMetadata {
 // UI Marker Components
 #[derive(Component)]
 pub struct HudRootNode;
+
+/// Present when the Compose shell draws the in-room popups (avatar menu, room settings, doorbell): the
+/// bevy_hui versions are not spawned then.
+#[derive(Resource)]
+pub struct ComposeRoomUi;
+
+/// Present when the Compose shell draws the HUD: the bevy_hui HUD is not spawned then.
+#[derive(Resource)]
+pub struct ComposeHud;
 
 #[derive(Component)]
 pub struct HudRoomTitleText;
@@ -249,7 +280,11 @@ fn setup_hud(
     active_meta: Res<ActiveRoomMetadata>,
     ui_font: Res<UiFont>,
     asset_server: Res<AssetServer>,
+    compose_hud: Option<Res<ComposeHud>>,
 ) {
+    if compose_hud.is_some() {
+        return; // The Compose shell draws the HUD.
+    }
     let owner_display = if active_meta.is_owner {
         Display::Flex
     } else {
@@ -404,37 +439,69 @@ fn handle_hud_buttons(
 ) {
     for interaction in nav_btn_q.iter() {
         if *interaction == Interaction::Pressed {
-            {
-                nav_state.is_open = !nav_state.is_open;
-                focus.0 = FocusedInput::None;
-                if nav_state.is_open {
-                    settings_state.is_open = false;
-                    nav_state.is_loading_popular = true;
-                    if let Some(net) = &net {
-                        net.handle.send_command(NakamaCommand::FetchPopularRooms);
-                        net.handle.send_command(NakamaCommand::FetchMyRooms);
-                        net.handle.send_command(NakamaCommand::FetchRoomLayouts);
-                    }
-                }
-            }
+            let open = !nav_state.is_open;
+            set_navigator_open(
+                open,
+                &mut nav_state,
+                &mut settings_state,
+                &mut focus,
+                net.as_deref(),
+            );
         }
     }
 
     for interaction in edit_btn_q.iter() {
         if *interaction == Interaction::Pressed {
-            {
-                settings_state.is_open = !settings_state.is_open;
-                if settings_state.is_open {
-                    nav_state.is_open = false;
-                    settings_state.edited_name = active_room.name.clone();
-                    settings_state.edited_visibility = active_meta.visibility.clone();
-                    settings_state.is_confirming_delete = false;
-                    focus.0 = FocusedInput::SettingsRoomName;
-                } else {
-                    focus.0 = FocusedInput::None;
-                }
-            }
+            toggle_room_settings(
+                &mut settings_state,
+                &mut nav_state,
+                &mut focus,
+                &active_room,
+                &active_meta,
+            );
         }
+    }
+}
+
+/// Opens or closes the room navigator; opening closes the room settings and fetches the lists.
+/// Shared by the bevy_hui HUD button and the Compose shell's `navigator_open`.
+pub fn set_navigator_open(
+    open: bool,
+    nav_state: &mut RoomNavigatorState,
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    net: Option<&NakamaResource>,
+) {
+    nav_state.is_open = open;
+    focus.0 = FocusedInput::None;
+    if open {
+        settings_state.is_open = false;
+        nav_state.is_loading_popular = true;
+        if let Some(net) = net {
+            net.handle.send_command(NakamaCommand::FetchPopularRooms);
+            net.handle.send_command(NakamaCommand::FetchMyRooms);
+            net.handle.send_command(NakamaCommand::FetchRoomLayouts);
+        }
+    }
+}
+
+/// Toggles the room settings window (owner only for the Compose shell, which checks `is_owner`).
+pub fn toggle_room_settings(
+    settings_state: &mut RoomSettingsState,
+    nav_state: &mut RoomNavigatorState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    active_meta: &ActiveRoomMetadata,
+) {
+    settings_state.is_open = !settings_state.is_open;
+    if settings_state.is_open {
+        nav_state.is_open = false;
+        settings_state.edited_name = active_room.name.clone();
+        settings_state.edited_visibility = active_meta.visibility.clone();
+        settings_state.is_confirming_delete = false;
+        focus.0 = FocusedInput::SettingsRoomName;
+    } else {
+        focus.0 = FocusedInput::None;
     }
 }
 
@@ -463,7 +530,11 @@ fn render_settings_overlay(
     safe_area: Res<SafeArea>,
     ui_scale: Res<UiScale>,
     asset_server: Res<AssetServer>,
+    compose: Option<Res<ComposeRoomUi>>,
 ) {
+    if compose.is_some() {
+        return; // The Compose shell draws the room settings.
+    }
     if !settings_state.is_changed()
         && !focus.is_changed()
         && !safe_area.is_changed()
@@ -840,11 +911,22 @@ fn respond_to_doorbell(
     let Some(request_id) = tags.get(entity).ok().and_then(|t| t.get("request_id")) else {
         return;
     };
-    if let Some(net) = &net {
+    answer_doorbell(request_id, allowed, &mut doorbell_state, net.as_deref());
+}
+
+/// Answers a visitor's doorbell request (the owner lets them in or not) and clears the popup. Shared by
+/// the bevy_hui popup and the Compose shell's `doorbell_answer`.
+pub fn answer_doorbell(
+    request_id: &str,
+    allowed: bool,
+    doorbell_state: &mut DoorbellState,
+    net: Option<&NakamaResource>,
+) {
+    if let Some(net) = net {
         net.handle
             .send_command(NakamaCommand::SendMessage(ClientMessage::DoorbellResponse(
                 DoorbellResponse {
-                    request_id: request_id.clone(),
+                    request_id: request_id.to_string(),
                     allowed,
                 },
             )));
@@ -857,8 +939,12 @@ fn render_doorbell_popup(
     doorbell_state: Res<DoorbellState>,
     template: Option<Res<DoorbellTemplate>>,
     existing: Query<Entity, With<DoorbellPopupRoot>>,
+    compose: Option<Res<ComposeRoomUi>>,
 ) {
     let Some(template) = template else { return };
+    if compose.is_some() {
+        return; // The Compose shell draws the doorbell popup.
+    }
     if !doorbell_state.is_changed() && !template.is_added() {
         return;
     }
@@ -950,29 +1036,15 @@ fn handle_settings_interactions(
     }
 
     for interaction in save_q.iter_mut() {
-        if *interaction == Interaction::Pressed
-            && let Some(net) = &net
-        {
-            let name = if settings_state.edited_name.trim().is_empty() {
-                active_room.name.clone()
-            } else {
-                settings_state.edited_name.trim().to_string()
-            };
-            active_meta.visibility = settings_state.edited_visibility.clone();
-            active_meta.room_name = name.clone();
-            for r in &mut nav_state.my_rooms {
-                if r.room_id == active_room.id {
-                    r.name = name.clone();
-                    r.visibility = settings_state.edited_visibility.clone();
-                }
-            }
-            net.handle.send_command(NakamaCommand::UpdateRoom {
-                room_id: active_room.id.clone(),
-                name,
-                visibility: settings_state.edited_visibility.clone(),
-            });
-            settings_state.is_open = false;
-            focus.0 = FocusedInput::None;
+        if *interaction == Interaction::Pressed {
+            save_room_settings(
+                &mut settings_state,
+                &mut focus,
+                &active_room,
+                &mut active_meta,
+                &mut nav_state,
+                net.as_deref(),
+            );
         }
     }
 
@@ -989,18 +1061,65 @@ fn handle_settings_interactions(
     }
 
     for interaction in confirm_q.iter_mut() {
-        if *interaction == Interaction::Pressed
-            && let Some(net) = &net
-        {
-            info!("Confirming room deletion for: {}", active_room.id);
-            net.handle.send_command(NakamaCommand::DeleteRoom {
-                room_id: active_room.id.clone(),
-            });
-            settings_state.is_open = false;
-            settings_state.is_confirming_delete = false;
-            focus.0 = FocusedInput::None;
+        if *interaction == Interaction::Pressed {
+            confirm_room_deletion(
+                &mut settings_state,
+                &mut focus,
+                &active_room,
+                net.as_deref(),
+            );
         }
     }
+}
+
+/// Saves the edited name and visibility of the room (optimistically in the local copies) and closes the
+/// settings. Shared by the bevy_hui button and the Compose shell's `settings_save`.
+pub fn save_room_settings(
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    active_meta: &mut ActiveRoomMetadata,
+    nav_state: &mut RoomNavigatorState,
+    net: Option<&NakamaResource>,
+) {
+    let Some(net) = net else { return };
+    let name = if settings_state.edited_name.trim().is_empty() {
+        active_room.name.clone()
+    } else {
+        settings_state.edited_name.trim().to_string()
+    };
+    active_meta.visibility = settings_state.edited_visibility.clone();
+    active_meta.room_name = name.clone();
+    for r in &mut nav_state.my_rooms {
+        if r.room_id == active_room.id {
+            r.name = name.clone();
+            r.visibility = settings_state.edited_visibility.clone();
+        }
+    }
+    net.handle.send_command(NakamaCommand::UpdateRoom {
+        room_id: active_room.id.clone(),
+        name,
+        visibility: settings_state.edited_visibility.clone(),
+    });
+    settings_state.is_open = false;
+    focus.0 = FocusedInput::None;
+}
+
+/// Deletes the active room (the server sends everybody back to the lobby) and closes the settings.
+pub fn confirm_room_deletion(
+    settings_state: &mut RoomSettingsState,
+    focus: &mut ActiveInputFocus,
+    active_room: &ActiveRoom,
+    net: Option<&NakamaResource>,
+) {
+    let Some(net) = net else { return };
+    info!("Confirming room deletion for: {}", active_room.id);
+    net.handle.send_command(NakamaCommand::DeleteRoom {
+        room_id: active_room.id.clone(),
+    });
+    settings_state.is_open = false;
+    settings_state.is_confirming_delete = false;
+    focus.0 = FocusedInput::None;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1146,5 +1265,57 @@ mod tests {
         assert_eq!(focus_edit.0, FocusedInput::SettingsRoomName);
         focus_edit.0 = FocusedInput::None;
         assert_eq!(focus_edit.0, FocusedInput::None);
+    }
+
+    fn summary(id: &str) -> RoomSummaryDto {
+        RoomSummaryDto {
+            room_id: id.into(),
+            name: id.into(),
+            owner_id: None,
+            owner_name: None,
+            visibility: "public".into(),
+            user_count: 0,
+            max_users: 10,
+            match_id: None,
+        }
+    }
+
+    #[test]
+    fn public_rooms_have_no_owner() {
+        assert_eq!(resolve_ownership("lobby", "", "me", &[]), (None, false));
+        assert_eq!(resolve_ownership("cafe", "", "me", &[]), (None, false));
+    }
+
+    #[test]
+    fn the_snapshot_owner_decides_when_it_matches_my_user_id() {
+        assert_eq!(
+            resolve_ownership("r1", "me", "me", &[]),
+            (Some("me".to_string()), true)
+        );
+    }
+
+    #[test]
+    fn someone_elses_room_is_not_mine_even_if_it_is_in_my_rooms() {
+        // The snapshot wins over the lists.
+        let mine = [summary("r2")];
+        assert_eq!(
+            resolve_ownership("r2", "alice", "me", &mine),
+            (Some("alice".to_string()), false)
+        );
+    }
+
+    #[test]
+    fn an_empty_snapshot_owner_falls_back_to_my_rooms() {
+        let mine = [summary("r3")];
+        assert_eq!(resolve_ownership("r3", "", "me", &mine), (None, true));
+        assert_eq!(resolve_ownership("r4", "", "me", &mine), (None, false));
+    }
+
+    #[test]
+    fn an_empty_local_user_id_never_matches() {
+        assert_eq!(
+            resolve_ownership("r1", "someone", "", &[]),
+            (Some("someone".to_string()), false)
+        );
     }
 }

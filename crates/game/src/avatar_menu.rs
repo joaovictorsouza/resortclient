@@ -72,7 +72,11 @@ fn render_menu(
     ui_font: Res<UiFont>,
     safe_area: Res<SafeArea>,
     ui_scale: Res<UiScale>,
+    compose: Option<Res<crate::navigator::ComposeRoomUi>>,
 ) {
+    if compose.is_some() {
+        return; // The Compose shell draws the avatar menu.
+    }
     if !state.is_changed() {
         return;
     }
@@ -172,6 +176,40 @@ fn menu_hover(
     }
 }
 
+/// "Visuais": opens the avatar editor from the room. Shared by the bevy_hui row and the Compose shell.
+pub fn open_visuals(
+    state: &mut AvatarMenuState,
+    creator_state: &mut CharacterCreatorState,
+    next_state: &mut NextState<AppState>,
+) {
+    state.is_open = false;
+    creator_state.return_to_room = true;
+    next_state.set(AppState::CharacterCreator);
+}
+
+/// "Sair": revokes the session, forgets the login and goes back to the login screen. Shared by the
+/// bevy_hui row and the Compose shell.
+pub fn sign_out_to_login(
+    commands: &mut Commands,
+    state: &mut AvatarMenuState,
+    config: &mut GameConfig,
+    next_state: &mut NextState<AppState>,
+) {
+    state.is_open = false;
+    if let Some(refresh_token) = config.refresh_token.clone() {
+        nakama_client::revoke_session(
+            config.host.clone(),
+            config.port,
+            config.server_key.clone(),
+            refresh_token,
+        );
+    }
+    sign_out(config);
+    // Dropping the handle stops the network worker and its connection.
+    commands.remove_resource::<NakamaResource>();
+    next_state.set(AppState::Login);
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn handle_menu_buttons(
     mut commands: Commands,
@@ -184,23 +222,9 @@ fn handle_menu_buttons(
     mut next_state: ResMut<NextState<AppState>>,
 ) {
     if visuals.iter().any(|i| *i == Interaction::Pressed) {
-        state.is_open = false;
-        creator_state.return_to_room = true;
-        next_state.set(AppState::CharacterCreator);
+        open_visuals(&mut state, &mut creator_state, &mut next_state);
     } else if sign_out_btn.iter().any(|i| *i == Interaction::Pressed) {
-        state.is_open = false;
-        if let Some(refresh_token) = config.refresh_token.clone() {
-            nakama_client::revoke_session(
-                config.host.clone(),
-                config.port,
-                config.server_key.clone(),
-                refresh_token,
-            );
-        }
-        sign_out(&mut config);
-        // Dropping the handle stops the network worker and its connection.
-        commands.remove_resource::<NakamaResource>();
-        next_state.set(AppState::Login);
+        sign_out_to_login(&mut commands, &mut state, &mut config, &mut next_state);
     } else if backdrop.iter().any(|i| *i == Interaction::Pressed) {
         state.is_open = false;
     }

@@ -29,3 +29,19 @@ Temp Package/
 .server-contract/
 .assets-publish.env
 build/
+kmp/iosApp/build-device
+kmp/iosApp/build
+kmp/iosApp/iosApp.xcodeproj
+kmp/**/build/
+kmp/.gradle/
+kmp/local.properties
+kmp/.kotlin/
+
+# IDE-generated, per machine
+local.properties
+.gradle/
+.kotlin/
+
+# Local Xcode build outputs of kmp/iosApp
+kmp/iosApp/build-*/
+kmp/iosApp/iosApp.xcodeproj/

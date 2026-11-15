@@ -1,5 +1,0 @@
-Config/Local.xcconfig
-build/
-DerivedData/
-xcuserdata/
-*.ipa

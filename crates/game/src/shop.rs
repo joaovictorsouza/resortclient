@@ -223,6 +223,10 @@ pub struct ShopState {
     pub status: Option<ShopStatus>,
 }
 
+/// Present when the Compose shell draws the shop: the bevy_hui window is not spawned then.
+#[derive(Resource)]
+pub struct ComposeShop;
+
 /// HUD button that opens the shop.
 #[derive(Component)]
 pub struct HudShopBtn;
@@ -354,13 +358,25 @@ fn toggle_shop_from_hud(
     if !button.iter().any(|i| *i == Interaction::Pressed) {
         return;
     }
-    state.is_open = !state.is_open;
-    if state.is_open {
+    let open = !state.is_open;
+    set_shop_open(open, &mut state, &mut inventory, net.as_deref());
+}
+
+/// Opens or closes the shop; opening closes the inventory and fetches the catalog. Shared by the
+/// bevy_hui HUD button and the Compose shell's `shop_open`.
+pub fn set_shop_open(
+    open: bool,
+    state: &mut ShopState,
+    inventory: &mut PlayerInventoryState,
+    net: Option<&NakamaResource>,
+) {
+    state.is_open = open;
+    if open {
         inventory.is_open = false;
         state.is_loading = true;
         state.status = None;
         state.pending = None;
-        if let Some(net) = &net {
+        if let Some(net) = net {
             net.handle.send_command(NakamaCommand::FetchShopCatalog);
         }
     }
@@ -501,6 +517,7 @@ fn sync_shop_window(
     mut icons: Query<(&UiId, &mut ImageNode, &mut Visibility)>,
     mut needs_fill: Local<bool>,
     mut last_view: Local<(Option<String>, String)>,
+    compose: Option<Res<ComposeShop>>,
 ) {
     let Some(templates) = templates else { return };
 
@@ -515,6 +532,9 @@ fn sync_shop_window(
             state.pending = None;
         }
         return;
+    }
+    if compose.is_some() {
+        return; // The Compose shell draws the shop window.
     }
 
     if safe_area.is_changed() || ui_scale.is_changed() {

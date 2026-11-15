@@ -21,8 +21,9 @@ O servidor fica em [resort-game-server](https://github.com/joaovictorsouza/resor
 
 ## Builds mobile
 
-- Android: `scripts/run-android.sh` (debug) e `scripts/build-apk.sh` (release).
-- iOS: `scripts/run-ios-sim.sh` (simulador) e `scripts/build-ios-device.sh` / `scripts/export-ipa.sh` (assinatura local).
+O mobile roda no host Kotlin Multiplatform (`kmp/`); o Android e o iOS nativos antigos foram removidos ([ADR 0014](ai-docs/decisions/0014-remocao-do-mobile-nativo-antigo.md)).
+- Android: `cd kmp && ./gradlew :androidApp:assembleDebug` (instalação e emulador em [rodando-do-zero](ai-docs/architecture/rodando-do-zero.md)).
+- iOS: `NAKAMA_SERVER_KEY=... ./scripts/kmp-ios-device.sh <udid> Debug` (aparelho) ou o simulador, como no guia acima.
 - Ambiente: `ENVIRONMENT=dev|prod` escolhe `environments/<nome>.env`.
 
 ## Contrato com o servidor

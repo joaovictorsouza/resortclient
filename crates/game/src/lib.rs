@@ -2,7 +2,7 @@
 // The HUD still reads `Interaction`; migrating it is tracked separately, so the warnings are muted.
 #![allow(deprecated)]
 
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "winit-host"))]
 pub mod android_google;
 pub mod appearance;
 pub mod avatar;
@@ -16,35 +16,53 @@ pub mod config;
 pub mod connection;
 pub mod furniture;
 pub mod game_log;
+#[cfg(feature = "kmp-host")]
+pub mod game_state_bridge;
 pub mod google_signin;
 pub mod gpu_compat;
+#[cfg(feature = "kmp-host")]
+pub mod hud_bridge;
 pub mod identity;
 pub mod ime;
 pub mod input;
 pub mod inventory;
-#[cfg(target_os = "ios")]
+#[cfg(all(target_os = "ios", feature = "winit-host"))]
 pub mod ios_google;
-#[cfg(target_os = "ios")]
+#[cfg(all(target_os = "ios", feature = "winit-host"))]
 pub mod ios_window;
+#[cfg(feature = "kmp-host")]
+pub mod kmp_host;
 pub mod navigator;
 pub mod navigator_ui;
 pub mod net;
+#[cfg(feature = "kmp-host")]
+pub mod onboarding;
+pub mod pet;
 pub mod preview;
 pub mod room;
 pub mod safe_area;
+#[cfg(feature = "kmp-host")]
+pub mod screens_bridge;
 pub mod secure_store;
 pub mod shop;
 pub mod state;
 pub mod status_panel;
+pub mod toon;
 pub mod touch_scroll;
 pub mod ui_scale;
 pub mod wallet;
+#[cfg(feature = "kmp-host")]
+pub mod wallet_bridge;
 
 use avian3d::prelude::*;
+#[cfg(feature = "winit-host")]
 use bevy::log::LogPlugin;
 use bevy::prelude::*;
+#[cfg(feature = "winit-host")]
 use bevy::render::RenderPlugin;
+#[cfg(feature = "winit-host")]
 use bevy::render::settings::RenderCreation;
+#[cfg(feature = "winit-host")]
 use bevy::window::{MonitorSelection, WindowMode, WindowResolution};
 
 use avatar::AvatarPlugin;
@@ -143,12 +161,14 @@ impl Plugin for GamePlugin {
             .add_plugins(InventoryPlugin)
             .add_plugins(WalletPlugin)
             .add_plugins(ShopPlugin)
+            .add_plugins(toon::ToonAvatarGamePlugin)
             .add_plugins(AvatarPlugin)
             .add_plugins(AvatarAnimationPlugin)
             .add_plugins(AvatarMenuPlugin)
+            .add_plugins(pet::PetPlugin)
             .add_plugins(InputPlugin);
 
-        #[cfg(target_os = "ios")]
+        #[cfg(all(target_os = "ios", feature = "winit-host"))]
         app.add_plugins((
             bevy_ios_app_delegate::IosAppDelegatePlugin,
             bevy_ios_safearea::IosSafeAreaPlugin,
@@ -158,6 +178,7 @@ impl Plugin for GamePlugin {
     }
 }
 
+#[cfg(feature = "winit-host")]
 /// Desktop gets a fixed 1280x720 window. On mobile the window must be fullscreen so Bevy takes
 /// the real screen size; otherwise it keeps the default 1280x720 logical size, which is larger
 /// than the device screen and makes the camera framing and the UI overflow.
@@ -181,6 +202,7 @@ fn primary_window() -> Window {
 }
 
 /// Main entrypoint capable of running on Desktop, Android, and iOS
+#[cfg(feature = "winit-host")]
 pub fn run() -> AppExit {
     let mut app = App::new();
     // Must come before DefaultPlugins: Bevy builds the asset sources when AssetPlugin is added.
@@ -217,8 +239,8 @@ pub fn parse_env_file(content: &str) -> Vec<(String, String)> {
 }
 
 /// Android has no shell environment or command line: the profile goes to the app's private data
-/// dir, and `assets/dev.env` (written by `scripts/run-android.sh`) provides `NAKAMA_HOST` etc.
-#[cfg(target_os = "android")]
+/// dir, and `assets/dev.env` (written by the Gradle build of the Android shell) provides `NAKAMA_HOST` etc.
+#[cfg(all(target_os = "android", feature = "winit-host"))]
 fn configure_android_env(app: &bevy::android::android_activity::AndroidApp) {
     use std::io::Read;
 
@@ -242,7 +264,7 @@ fn configure_android_env(app: &bevy::android::android_activity::AndroidApp) {
 }
 
 /// Android entry point (NativeActivity loads `libgame.so` and calls this).
-#[cfg(target_os = "android")]
+#[cfg(all(target_os = "android", feature = "winit-host"))]
 #[unsafe(no_mangle)]
 fn android_main(android_app: bevy::android::android_activity::AndroidApp) {
     configure_android_env(&android_app);
@@ -254,7 +276,7 @@ fn android_main(android_app: bevy::android::android_activity::AndroidApp) {
 }
 
 /// C entry point called from the iOS launcher (`ios/main.m`), which owns `main`.
-#[cfg(target_os = "ios")]
+#[cfg(all(target_os = "ios", feature = "winit-host"))]
 #[unsafe(no_mangle)]
 pub extern "C" fn main_rs() {
     let _ = google_signin::register_google_sign_in_bridge(Box::new(ios_google::IosGoogleSignIn));
@@ -284,35 +306,11 @@ mod env_file_tests {
     }
 }
 
-#[cfg(test)]
-mod info_plist_tests {
-    /// Xcode rewrites the plist with other indentation, so compare without whitespace.
-    fn compact(plist: &str) -> String {
-        plist.split_whitespace().collect()
-    }
-
-    fn info_plist() -> String {
-        compact(include_str!("../../../ios/Info.plist"))
-    }
-
-    #[test]
-    fn status_bar_is_controlled_by_the_view_controller() {
-        assert!(
-            info_plist().contains("<key>UIViewControllerBasedStatusBarAppearance</key><true/>")
-        );
-    }
-
-    #[test]
-    fn app_is_landscape_only_and_uses_scenes() {
-        let plist = info_plist();
-        assert!(plist.contains("UIInterfaceOrientationLandscapeLeft"));
-        assert!(plist.contains("UIInterfaceOrientationLandscapeRight"));
-        assert!(!plist.contains("UIInterfaceOrientationPortrait"));
-        assert!(plist.contains("UIApplicationSceneManifest"));
-    }
-
-    #[test]
-    fn compact_ignores_indentation() {
-        assert_eq!(compact("<key>A</key>\n\t<true/>"), "<key>A</key><true/>");
-    }
-}
+// KMP host entry: exposes the UniFFI `BevyHost` to the Kotlin shell (see `kmp_host`).
+#[cfg(feature = "kmp-host")]
+bevy_kmp_ffi::export!(
+    kmp_host::build_app,
+    gpu_hook = kmp_host::gpu_hook,
+    pre_plugins = kmp_host::pre_plugins,
+    log_layer = game_log::custom_layer
+);

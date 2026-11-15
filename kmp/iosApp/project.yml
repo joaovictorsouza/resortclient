@@ -1,0 +1,94 @@
+name: iosApp
+options:
+  bundleIdPrefix: br.eng.joaovictor
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    SWIFT_VERSION: "5.0"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 8.0.0
+targets:
+  iosApp:
+    type: application
+    platform: iOS
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    sources:
+      - iosApp
+      - path: ../../assets
+        type: folder
+        name: assets
+    info:
+      path: iosApp/Info.plist
+      properties:
+        CFBundleDisplayName: new_game
+        CFBundleName: new_game
+        UILaunchScreen: {}
+        CADisableMinimumFrameDurationOnPhone: true
+        UIRequiresFullScreen: true
+        UIStatusBarHidden: true
+        UIViewControllerBasedStatusBarAppearance: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # Dev server speaks plain http/ws on the LAN.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        NSLocalNetworkUsageDescription: Connects to the local development game server.
+        # Google sign-in values (same OAuth client the previous native iOS app used).
+        GIDClientID: 785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk.apps.googleusercontent.com
+        GIDServerClientID: 785803086063-jun3ecqn84ogjm34sf6727nnblacg0sj.apps.googleusercontent.com
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - com.googleusercontent.apps.785803086063-3dvdtr3fa0ll312v41eit8opamc3dumk
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: br.eng.joaovictor.resort
+        FRAMEWORK_SEARCH_PATHS: "$(SRCROOT)/../shared/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
+        OTHER_LDFLAGS:
+          - -framework
+          - Shared
+          - -framework
+          - Metal
+          - -framework
+          - QuartzCore
+          - -framework
+          - Security
+          - -framework
+          - AudioToolbox
+          - -framework
+          - CoreAudio
+          - -framework
+          - AVFoundation
+          - -lc++
+    preBuildScripts:
+      - name: Build Kotlin framework (and Rust)
+        script: |
+          cd "$SRCROOT/../"
+          ./gradlew :shared:embedAndSignAppleFrameworkForXcode
+        basedOnDependencyAnalysis: false
+    postBuildScripts:
+      - name: Write runtime config (assets/dev.env)
+        script: |
+          # NAKAMA_SERVER_KEY and friends come from the environment; never committed.
+          ROOT="$SRCROOT/../.."
+          ENV_NAME="${ENVIRONMENT:-dev}"
+          OUT="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/assets/dev.env"
+          mkdir -p "$(dirname "$OUT")"
+          get() { local v; v="$(printenv "$1")"; [ -n "$v" ] && echo "$v" || grep -E "^$1=" "$ROOT/environments/$ENV_NAME.env" 2>/dev/null | head -1 | cut -d= -f2-; }
+          {
+            echo "NAKAMA_HOST=$(get NAKAMA_HOST)"
+            echo "NAKAMA_PORT=$(get NAKAMA_PORT)"
+            echo "GAME_DEV_MODE=$(get GAME_DEV_MODE)"
+            echo "GAME_ENV=$ENV_NAME"
+            [ -n "$(get NAKAMA_SERVER_KEY)" ] && echo "NAKAMA_SERVER_KEY=$(get NAKAMA_SERVER_KEY)"
+            [ -n "$(get ASSETS_MANIFEST_URL)" ] && echo "ASSETS_MANIFEST_URL=$(get ASSETS_MANIFEST_URL)"
+            [ -n "$(get GAME_SCENE_STYLE)" ] && echo "GAME_SCENE_STYLE=$(get GAME_SCENE_STYLE)"
+            true
+          } > "$OUT"
+        basedOnDependencyAnalysis: false

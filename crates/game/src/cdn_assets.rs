@@ -232,9 +232,18 @@ impl CdnAssets {
 /// Registers the CDN-backed default asset source. Call before adding `DefaultPlugins`
 /// (Bevy builds asset sources when `AssetPlugin` is added).
 pub fn install(app: &mut App) -> CdnAssets {
+    install_with(app, AssetSource::get_default_reader("assets".to_string()))
+}
+
+/// Like [`install`], with the reader for the files bundled with the app. The KMP host passes a
+/// file reader over the directory where the shell copied the bundled assets (Android keeps them
+/// inside the APK, where Bevy's own reader cannot reach them without an Activity).
+pub fn install_with(
+    app: &mut App,
+    mut make_inner: impl FnMut() -> Box<dyn bevy::asset::io::ErasedAssetReader> + Send + Sync + 'static,
+) -> CdnAssets {
     let cdn = CdnAssets::default();
     let reader_cdn = cdn.clone();
-    let mut make_inner = AssetSource::get_default_reader("assets".to_string());
     app.register_asset_source(
         AssetSourceId::Default,
         AssetSourceBuilder::platform_default("assets", None)
@@ -250,12 +259,12 @@ pub fn cdn_settled(cdn: Option<Res<CdnAssets>>) -> bool {
 }
 
 /// A `.json` file read as text, loaded through the asset server (and so through the CDN):
-/// `clips.json` and `characters/catalog.json`.
+/// `clips.json` and `characters/cosmetics_v3.json`.
 #[derive(Asset, TypePath, Debug)]
 pub struct JsonText(pub String);
 
 #[derive(Default, TypePath)]
-struct JsonTextLoader;
+pub struct JsonTextLoader;
 
 impl AssetLoader for JsonTextLoader {
     type Asset = JsonText;

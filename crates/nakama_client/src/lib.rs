@@ -87,6 +87,9 @@ pub struct AccountCheck {
     pub status: ProfileStatus,
     pub refresh_token: Option<String>,
     pub catalogs: Option<protocol::GetCatalogsResponse>,
+    /// The appearance stored on the server, read only for accounts that already have a nickname.
+    /// `None` when it could not be read (the check does not fail because of it).
+    pub appearance: Option<protocol::AvatarAppearance>,
 }
 
 /// Runs `auth` against the REST client on its own thread, then reads the profile status with the
@@ -129,10 +132,18 @@ where
                             .await
                             .map_err(|e| eprintln!("get_catalogs after login failed: {e}"))
                             .ok();
+                        // Best effort: a returning player skips the character creator when the
+                        // server already has an appearance (see `game::identity`).
+                        let appearance = if status.nickname_set {
+                            rest.get_avatar_appearance(&auth.token).await.ok()
+                        } else {
+                            None
+                        };
                         Ok(AccountCheck {
                             status,
                             refresh_token: auth.refresh_token,
                             catalogs,
+                            appearance,
                         })
                     })
                 });

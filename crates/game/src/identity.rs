@@ -140,6 +140,28 @@ pub struct LoginState {
     checking: Option<crossbeam_channel::Receiver<Result<AccountCheck, String>>>,
 }
 
+impl LoginState {
+    /// Starts a Google sign-in unless one is already running; returns whether it started.
+    pub fn start_google(&mut self, env: crate::config::GameEnv) -> bool {
+        if self.pending.is_some() || self.checking.is_some() {
+            return false;
+        }
+        self.status = None;
+        self.pending = Some(Mutex::new(request_google_id_token_for(env)));
+        true
+    }
+
+    /// A sign-in or the account check that follows it is in flight.
+    pub fn is_busy(&self) -> bool {
+        self.pending.is_some() || self.checking.is_some()
+    }
+}
+
+/// When present, the login and nickname screens are drawn by the native shell (Compose) and the
+/// `bevy_hui` versions are not spawned. See `onboarding`.
+#[derive(Resource, Default)]
+pub struct NativeOnboarding;
+
 /// The saved Google session being restored at launch (see [`check_auth_status`]).
 #[derive(Resource, Default)]
 struct SessionRestore {
@@ -227,8 +249,8 @@ fn check_auth_status(
                 if let Some(catalogs) = check.catalogs.clone() {
                     catalogs_loaded.write(NetCatalogsLoadedEvent(catalogs));
                 }
-                config.refresh_token = check.refresh_token.or(config.refresh_token.take());
-                next_state.set(apply_profile_status(&check.status, &mut config));
+                config.refresh_token = check.refresh_token.clone().or(config.refresh_token.take());
+                next_state.set(apply_account_check(&check, &mut config));
             }
             Ok(Err(message)) => {
                 warn!("Saved login could not be restored: {message}");
@@ -274,6 +296,40 @@ pub fn apply_profile_status(status: &ProfileStatus, config: &mut GameConfig) -> 
     config.needs_nickname_setup = false;
     save_profile(config);
     state_after_identity(config)
+}
+
+/// Like [`apply_profile_status`] for a whole account check: a returning account whose server-side
+/// appearance is not the default skips the character creator even on a device that has no local
+/// profile yet (reinstall, new phone). The server answers the default appearance when none was
+/// ever saved, so "not the default" is the signal that the player did customize it.
+pub fn apply_account_check(check: &AccountCheck, config: &mut GameConfig) -> AppState {
+    let next = apply_profile_status(&check.status, config);
+    if next != AppState::CharacterCreator {
+        return next;
+    }
+    match &check.appearance {
+        Some(appearance) if *appearance != protocol::AvatarAppearance::default() => {
+            store_appearance(config, appearance.clone());
+            state_after_identity(config)
+        }
+        _ => next,
+    }
+}
+
+/// Saves an appearance fetched from the server into the local profile (not in dev mode).
+fn store_appearance(config: &GameConfig, appearance: protocol::AvatarAppearance) {
+    if config.is_dev_mode {
+        return;
+    }
+    let Some(path) = &config.profile_path else {
+        return;
+    };
+    let mut profile = UserProfile::load_from_file(path)
+        .unwrap_or_else(|_| UserProfile::new(config.device_id.clone(), config.username.clone()));
+    profile.appearance = Some(appearance);
+    if let Err(e) = profile.save_to_file(path) {
+        warn!("Failed to store the server appearance: {e}");
+    }
 }
 
 /// Keeps the refresh token in the Keychain/Keystore and out of the profile file; on platforms
@@ -352,6 +408,12 @@ pub enum LoginOutcome {
 /// domain/code or server answer, never a token) so a failing build can be diagnosed on the device.
 pub fn google_failure_message(reason: &str, config: &GameConfig) -> String {
     const FRIENDLY: &str = "Não foi possível entrar com o Google.";
+    if config.game_env.shows_status_panel() && reason.contains("Server key invalid") {
+        return format!(
+            "{FRIENDLY}\nO servidor recusou a chave do app (401). Este build foi gerado sem \
+             NAKAMA_SERVER_KEY: gere de novo com a variável definida."
+        );
+    }
     if config.game_env.shows_status_panel() && !reason.trim().is_empty() {
         format!(
             "{FRIENDLY}\n{}",
@@ -430,10 +492,7 @@ fn setup_identity_ui(
     functions.register(
         "login_google",
         |_: In<Entity>, mut state: ResMut<LoginState>, config: Res<GameConfig>| {
-            if state.pending.is_none() && state.checking.is_none() {
-                state.status = None;
-                state.pending = Some(Mutex::new(request_google_id_token_for(config.game_env)));
-            }
+            state.start_google(config.game_env);
         },
     );
     functions.register(
@@ -470,10 +529,14 @@ fn setup_login_screen(
     mut commands: Commands,
     templates: Res<IdentityTemplates>,
     mut state: ResMut<LoginState>,
+    native: Option<Res<NativeOnboarding>>,
 ) {
     state.status = None;
     state.pending = None;
     state.checking = None;
+    if native.is_some() {
+        return;
+    }
     commands.spawn((
         LoginScreenRoot,
         HtmlNode(templates.login.clone()),
@@ -500,8 +563,8 @@ fn poll_google_sign_in(
                 if let Some(catalogs) = check.catalogs.clone() {
                     catalogs_loaded.write(NetCatalogsLoadedEvent(catalogs));
                 }
-                config.refresh_token = check.refresh_token;
-                next_state.set(apply_profile_status(&check.status, &mut config));
+                config.refresh_token = check.refresh_token.clone();
+                next_state.set(apply_account_check(&check, &mut config));
             }
             Ok(Err(message)) => {
                 warn!("Google account check failed: {message}");
@@ -558,7 +621,14 @@ fn update_login_screen_ui(state: Res<LoginState>, mut texts: Query<(&UiId, &mut 
     }
 }
 
-fn setup_nickname_screen(mut commands: Commands, templates: Res<IdentityTemplates>) {
+fn setup_nickname_screen(
+    mut commands: Commands,
+    templates: Res<IdentityTemplates>,
+    native: Option<Res<NativeOnboarding>>,
+) {
+    if native.is_some() {
+        return;
+    }
     commands.spawn((
         NicknameScreenRoot,
         HtmlNode(templates.nickname.clone()),
@@ -634,6 +704,57 @@ fn update_nickname_screen_ui(
 mod tests {
     use super::*;
     use std::env;
+
+    fn account_with(appearance: Option<protocol::AvatarAppearance>) -> AccountCheck {
+        AccountCheck {
+            status: ProfileStatus {
+                nickname_set: true,
+                username: "Alice_1".into(),
+            },
+            refresh_token: None,
+            catalogs: None,
+            appearance,
+        }
+    }
+
+    fn config_with_profile_dir() -> (GameConfig, std::path::PathBuf) {
+        let dir = env::temp_dir().join(format!("test_account_{}", uuid::Uuid::new_v4()));
+        let mut config = test_config();
+        config.is_dev_mode = false;
+        config.profile_path = Some(dir.join("profile.json"));
+        (config, dir)
+    }
+
+    #[test]
+    fn returning_account_with_a_server_appearance_skips_the_creator() {
+        let (mut config, dir) = config_with_profile_dir();
+        let custom = protocol::AvatarAppearance {
+            hair_id: "Hairstyle.01".into(),
+            ..protocol::AvatarAppearance::default()
+        };
+        let next = apply_account_check(&account_with(Some(custom.clone())), &mut config);
+        assert_eq!(next, AppState::Connecting);
+        let saved = UserProfile::load_from_file(config.profile_path.as_ref().unwrap()).unwrap();
+        assert_eq!(saved.appearance, Some(custom));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn returning_account_without_a_custom_appearance_still_sees_the_creator() {
+        for appearance in [None, Some(protocol::AvatarAppearance::default())] {
+            let (mut config, dir) = config_with_profile_dir();
+            let next = apply_account_check(&account_with(appearance), &mut config);
+            assert_eq!(next, AppState::CharacterCreator);
+            let _ = fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn missing_server_key_is_explained_outside_production() {
+        let config = GameConfig::default();
+        let msg = google_failure_message("API error (401): Server key invalid", &config);
+        assert!(msg.contains("NAKAMA_SERVER_KEY"), "{msg}");
+    }
 
     #[test]
     fn test_validate_nickname_valid() {

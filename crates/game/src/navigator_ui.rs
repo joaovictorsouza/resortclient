@@ -26,6 +26,10 @@ const TAB_BG_SELECTED: &str = "#4f46e5"; // indigo-600
 const EDGE: &str = "#334155"; // slate-700
 const EDGE_SELECTED: &str = "#818cf8"; // indigo-400
 
+/// Present when the Compose shell draws the room navigator: the bevy_hui window is not spawned then.
+#[derive(Resource)]
+pub struct ComposeNavigator;
+
 /// Built-in public spaces: (room id, name, description, capacity).
 pub const PUBLIC_SPACES: [(&str, &str, &str, u32); 2] = [
     (
@@ -139,7 +143,11 @@ pub fn input_value(nav: &RoomNavigatorState) -> &str {
 // Actions shared by buttons and the Enter key
 // ---------------------------------------------------------------------------
 
-fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
+pub(crate) fn select_tab(
+    tab: NavigatorTab,
+    nav: &mut RoomNavigatorState,
+    net: Option<&NakamaResource>,
+) {
     nav.current_tab = tab;
     let Some(net) = net else { return };
     match tab {
@@ -157,7 +165,7 @@ fn select_tab(tab: NavigatorTab, nav: &mut RoomNavigatorState, net: Option<&Naka
     }
 }
 
-fn join_room(
+pub(crate) fn join_room(
     room_id: &str,
     nav: &mut RoomNavigatorState,
     meta: &mut ActiveRoomMetadata,
@@ -183,7 +191,7 @@ fn join_room(
     focus.0 = crate::navigator::FocusedInput::None;
 }
 
-fn start_search(nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
+pub(crate) fn start_search(nav: &mut RoomNavigatorState, net: Option<&NakamaResource>) {
     let query = nav.search_query.trim().to_string();
     if let Some(net) = net {
         nav.is_searching = true;
@@ -399,10 +407,11 @@ fn sync_navigator_window(
     ids: Query<(Entity, &UiId)>,
     mut bar_tab: Local<Option<NavigatorTab>>,
     mut needs_fill: Local<bool>,
+    compose: Option<Res<ComposeNavigator>>,
 ) {
     let Some(templates) = templates else { return };
 
-    if !nav.is_open {
+    if !nav.is_open || compose.is_some() {
         for root in &roots {
             commands.entity(root).despawn();
         }

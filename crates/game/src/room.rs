@@ -25,6 +25,9 @@ pub struct RoomWall;
 pub const WALL_HEIGHT: f32 = 2.0;
 /// Wall thickness in tiles; walls are centered on the floor edge.
 pub const WALL_THICKNESS: f32 = 0.16;
+/// Height of a wall box's center: the wall sits on the floor surface and rises `WALL_HEIGHT`, so no
+/// part of it hangs below the floor slab's edge.
+const WALL_CENTER_Y: f32 = FLOOR_TILE_THICKNESS + WALL_HEIGHT / 2.0;
 /// Opacity of a wall that stands between the camera and the local avatar.
 const GHOST_WALL_ALPHA: f32 = 0.22;
 /// Height of the point on the avatar that must stay visible.
@@ -80,6 +83,28 @@ pub fn wall_pieces(heightmap: &[String]) -> Vec<WallPiece> {
                     side: WallSide::West,
                 });
             }
+            // A one-tile step in the boundary leaves a hole between two wall pieces that the posts
+            // (one grid line wide) do not cover: add the wall along the step's face.
+            if !is_floor(heightmap, x - 1, z)
+                && !is_floor(heightmap, x, z + 1)
+                && is_floor(heightmap, x + 1, z + 1)
+            {
+                pieces.push(WallPiece {
+                    x,
+                    z: z + 1,
+                    side: WallSide::North,
+                });
+            }
+            if !is_floor(heightmap, x, z - 1)
+                && !is_floor(heightmap, x + 1, z)
+                && is_floor(heightmap, x + 1, z + 1)
+            {
+                pieces.push(WallPiece {
+                    x: x + 1,
+                    z,
+                    side: WallSide::West,
+                });
+            }
         }
     }
     pieces
@@ -88,7 +113,7 @@ pub fn wall_pieces(heightmap: &[String]) -> Vec<WallPiece> {
 /// Center and size of a wall piece's box (centered on the floor edge).
 pub fn wall_box(piece: &WallPiece) -> (Vec3, Vec3) {
     let (x, z) = (piece.x as f32, piece.z as f32);
-    let y = WALL_HEIGHT / 2.0;
+    let y = WALL_CENTER_Y;
     match piece.side {
         WallSide::North => (
             Vec3::new(x + 0.5, y, z),
@@ -101,8 +126,8 @@ pub fn wall_box(piece: &WallPiece) -> (Vec3, Vec3) {
     }
 }
 
-/// Grid vertices where at least two wall pieces meet (or a piece ends): a post fills them so
-/// corners are closed and staircase walls have no gaps.
+/// Grid vertices where at least two wall pieces meet: a post fills them so corners are closed.
+/// A wall's free end gets no post (it would stick out past the floor edge).
 pub fn wall_posts(pieces: &[WallPiece]) -> Vec<(i32, i32)> {
     use std::collections::HashMap;
     let mut counts: HashMap<(i32, i32), u32> = HashMap::new();
@@ -115,7 +140,11 @@ pub fn wall_posts(pieces: &[WallPiece]) -> Vec<(i32, i32)> {
             *counts.entry(end).or_default() += 1;
         }
     }
-    let mut posts: Vec<_> = counts.into_keys().collect();
+    let mut posts: Vec<_> = counts
+        .into_iter()
+        .filter(|&(_, n)| n >= 2)
+        .map(|(v, _)| v)
+        .collect();
     posts.sort();
     posts
 }
@@ -173,8 +202,14 @@ impl Plugin for RoomPlugin {
     }
 }
 
+/// Thickness of the floor tile slab; it spans `y = 0..FLOOR_TILE_TOP`.
+pub const FLOOR_TILE_THICKNESS: f32 = 0.2;
+/// Height of the top surface of the floor tiles: the ground level for avatars and furniture.
+pub const FLOOR_TILE_TOP: f32 = FLOOR_TILE_THICKNESS;
+
+/// World position of a tile's walking surface (center of the tile, on top of the slab).
 pub fn tile_to_world(x: i32, z: i32) -> Vec3 {
-    Vec3::new(x as f32 + 0.5, 0.1, z as f32 + 0.5)
+    Vec3::new(x as f32 + 0.5, FLOOR_TILE_TOP, z as f32 + 0.5)
 }
 
 pub fn world_to_tile(pos: Vec3) -> (i32, i32) {
@@ -187,6 +222,7 @@ fn ghost_walls_in_the_way(
     cameras: Query<&GlobalTransform, With<crate::camera::MainRoomCamera>>,
     avatars: Query<(&crate::avatar::Avatar, &GlobalTransform)>,
     mut walls: Query<(&WallBox, &mut MeshMaterial3d<StandardMaterial>), With<RoomWall>>,
+    mut toon_walls: Query<(&WallBox, &mut toon_avatar::SceneToon), With<RoomWall>>,
 ) {
     let Some(wall_materials) = wall_materials else {
         return;
@@ -207,6 +243,18 @@ fn ghost_walls_in_the_way(
         };
         if material.0 != *wanted {
             material.0 = wanted.clone();
+        }
+    }
+    // With the cartoon style on, a wall's standard material lives in `SceneToon`: change that one
+    // and the style swaps the toon material to match.
+    for (wall, mut toon) in toon_walls.iter_mut() {
+        let wanted = if segment_hits_box(from, to, wall.center, wall.half) {
+            &wall_materials.ghost
+        } else {
+            &wall_materials.solid
+        };
+        if toon.original != *wanted {
+            toon.original = wanted.clone();
         }
     }
 }
@@ -254,7 +302,7 @@ fn handle_room_snapshot(
         let mut boxes: Vec<(Vec3, Vec3)> = pieces.iter().map(wall_box).collect();
         for (x, z) in wall_posts(&pieces) {
             boxes.push((
-                Vec3::new(x as f32, WALL_HEIGHT / 2.0, z as f32),
+                Vec3::new(x as f32, WALL_CENTER_Y, z as f32),
                 Vec3::new(WALL_THICKNESS, WALL_HEIGHT, WALL_THICKNESS),
             ));
         }
@@ -272,7 +320,7 @@ fn handle_room_snapshot(
         }
         commands.insert_resource(wall_materials);
 
-        let tile_mesh = meshes.add(Cuboid::new(0.96, 0.2, 0.96));
+        let tile_mesh = meshes.add(Cuboid::new(1.0, FLOOR_TILE_THICKNESS, 1.0));
 
         // Curated checkerboard tile palette (subtle modern aesthetic)
         let mat_tile_a = materials.add(StandardMaterial {
@@ -294,7 +342,9 @@ fn handle_room_snapshot(
 
                 let x_coord = x as i32;
                 let z_coord = z as i32;
-                let world_pos = tile_to_world(x_coord, z_coord);
+                // The slab is centered half its thickness below the walking surface.
+                let world_pos =
+                    tile_to_world(x_coord, z_coord) - Vec3::Y * (FLOOR_TILE_THICKNESS / 2.0);
 
                 let is_even = (x_coord + z_coord) % 2 == 0;
                 let material = if is_even {
@@ -312,7 +362,7 @@ fn handle_room_snapshot(
                     MeshMaterial3d(material),
                     Transform::from_translation(world_pos),
                     // Avian 3D collider for spatial raycasting and physics bounds
-                    Collider::cuboid(1.0, 0.2, 1.0),
+                    Collider::cuboid(1.0, FLOOR_TILE_THICKNESS, 1.0),
                 ));
             }
         }
@@ -367,7 +417,34 @@ mod tests {
                 .iter()
                 .any(|p| p.side == WallSide::North && p.x == 1 && p.z == 1)
         );
-        assert!(!pieces.iter().any(|p| p.x == 1 && p.z == 0));
+        // Only the notch's side wall is added at x=1 (the step's face), never a north wall on the hole itself.
+        assert!(
+            !pieces
+                .iter()
+                .any(|p| p.x == 1 && p.z == 0 && p.side == WallSide::North)
+        );
+    }
+
+    #[test]
+    fn a_staircase_boundary_has_no_gap_between_wall_pieces() {
+        // The west boundary steps one tile per row: x=0 on row 0, x=1 on row 1, x=2 on row 2.
+        let map: Vec<String> = ["000", "x00", "xx0"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let pieces = wall_pieces(&map);
+        let has = |x, z, side| {
+            pieces
+                .iter()
+                .any(|p| p.x == x && p.z == z && p.side == side)
+        };
+        // West pieces of the three rows ...
+        assert!(
+            has(0, 0, WallSide::West) && has(1, 1, WallSide::West) && has(2, 2, WallSide::West)
+        );
+        // ... joined along the faces of the steps (the edges between row 0/1 at x=0..1 and row 1/2 at x=1..2).
+        assert!(has(0, 1, WallSide::North));
+        assert!(has(1, 2, WallSide::North));
     }
 
     #[test]
@@ -415,6 +492,8 @@ mod tests {
         let world = tile_to_world(x, z);
         assert_eq!(world.x, 4.5);
         assert_eq!(world.z, 7.5);
+        // Avatars stand on top of the floor slab, not inside it.
+        assert_eq!(world.y, FLOOR_TILE_TOP);
 
         let (recovered_x, recovered_z) = world_to_tile(world);
         assert_eq!(recovered_x, x);

@@ -32,6 +32,21 @@
       "asset_id": ""
     },
     {
+      "catalog_id": "pet_dog_shihtzu",
+      "name": "Cachorro Shih-tzu",
+      "category": "pet",
+      "width": 1,
+      "depth": 1,
+      "walkable": true,
+      "color": "#8b5a2b",
+      "asset_id": "",
+      "pet": {
+        "species": "dog",
+        "breed": "shihtzu",
+        "coat": "default"
+      }
+    },
+    {
       "catalog_id": "seat_armchair_brown_leather",
       "name": "Poltrona de Couro Marrom",
       "category": "collider",

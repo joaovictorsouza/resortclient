@@ -1,0 +1,4 @@
+# bevy-kmp is a git dependency on a private GitLab repository: let git (and its credential helper)
+# fetch it instead of cargo's built-in libgit2.
+[net]
+git-fetch-with-cli = true

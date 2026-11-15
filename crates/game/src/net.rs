@@ -2,10 +2,11 @@ use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 use nakama_client::{NakamaClientHandle, NakamaCommand, NakamaEvent};
 use protocol::{
-    AvatarAppearanceUpdated, AvatarJoined, AvatarLeft, AvatarPath, AvatarPostureChanged,
-    BuildModeRejected, ClientMessage, GetShopCatalogResponse as ShopCatalogResponse,
-    InventoryItemDto, ItemMoved, ItemPlaced, ItemRemoved, ItemRotated, MoveRejected, MoveRequest,
-    PurchaseItemResponse, RoomSnapshot, ServerMessage, WalletDto,
+    AvatarAction, AvatarAppearanceUpdated, AvatarExpressionChanged, AvatarHoldingChanged,
+    AvatarJoined, AvatarLeft, AvatarPath, AvatarPostureChanged, BuildModeRejected, ClientMessage,
+    GetShopCatalogResponse as ShopCatalogResponse, InventoryItemDto, ItemMoved, ItemPlaced,
+    ItemRemoved, ItemRotated, MoveRejected, MoveRequest, PetAction, PetInteractResult, PetPath,
+    PetPlaced, PetRemoved, PurchaseItemResponse, RoomSnapshot, ServerMessage, WalletDto,
 };
 
 use crate::config::GameConfig;
@@ -58,6 +59,52 @@ pub struct NetAvatarAppearanceUpdatedEvent(pub AvatarAppearanceUpdated);
 
 #[derive(Message, Debug, Clone)]
 pub struct NetAvatarPostureChangedEvent(pub AvatarPostureChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarExpressionChangedEvent(pub AvatarExpressionChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarHoldingChangedEvent(pub AvatarHoldingChanged);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetAvatarActionEvent(pub AvatarAction);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetPlacedEvent(pub PetPlaced);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetPathEvent(pub PetPath);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetActionEvent(pub PetAction);
+
+#[derive(Message, Debug, Clone)]
+pub struct NetPetRemovedEvent(pub PetRemoved);
+
+/// The server's answer to a pet interaction request (to the requester only).
+#[derive(Message, Debug, Clone)]
+pub struct NetPetInteractResultEvent(pub PetInteractResult);
+
+/// The writers of the pet messages (bundled to stay under Bevy's parameter limit).
+#[derive(SystemParam)]
+pub struct PetMessageWriters<'w> {
+    placed: MessageWriter<'w, NetPetPlacedEvent>,
+    path: MessageWriter<'w, NetPetPathEvent>,
+    action: MessageWriter<'w, NetPetActionEvent>,
+    removed: MessageWriter<'w, NetPetRemovedEvent>,
+    interaction: MessageWriter<'w, NetPetInteractResultEvent>,
+}
+
+/// The writers of the avatar messages other than movement: appearance, posture, expression, held
+/// prop and avatar action (bundled to stay under Bevy's parameter limit).
+#[derive(SystemParam)]
+pub struct EmoteMessageWriters<'w> {
+    appearance: MessageWriter<'w, NetAvatarAppearanceUpdatedEvent>,
+    posture: MessageWriter<'w, NetAvatarPostureChangedEvent>,
+    expression: MessageWriter<'w, NetAvatarExpressionChangedEvent>,
+    holding: MessageWriter<'w, NetAvatarHoldingChangedEvent>,
+    action: MessageWriter<'w, NetAvatarActionEvent>,
+}
 
 /// New balances. `delta_*` are zero unless the server reported the change (heartbeat rewards,
 /// pushed grants), which lets the HUD play the gold sound only for incoming gold.
@@ -117,6 +164,14 @@ impl Plugin for NetPlugin {
             .add_message::<NetInventoryLoadedEvent>()
             .add_message::<NetAvatarAppearanceUpdatedEvent>()
             .add_message::<NetAvatarPostureChangedEvent>()
+            .add_message::<NetAvatarExpressionChangedEvent>()
+            .add_message::<NetAvatarHoldingChangedEvent>()
+            .add_message::<NetAvatarActionEvent>()
+            .add_message::<NetPetPlacedEvent>()
+            .add_message::<NetPetPathEvent>()
+            .add_message::<NetPetActionEvent>()
+            .add_message::<NetPetRemovedEvent>()
+            .add_message::<NetPetInteractResultEvent>()
             .add_message::<NetWalletUpdatedEvent>()
             .add_message::<NetShopCatalogLoadedEvent>()
             .add_message::<NetPurchaseSucceededEvent>()
@@ -208,8 +263,8 @@ fn poll_nakama_events(
     mut doorbell_state: ResMut<DoorbellState>,
     mut active_meta: ResMut<ActiveRoomMetadata>,
     mut furni_writers: FurnitureMessageWriters,
-    mut appearance_events: MessageWriter<NetAvatarAppearanceUpdatedEvent>,
-    mut posture_events: MessageWriter<NetAvatarPostureChangedEvent>,
+    mut emotes: EmoteMessageWriters,
+    mut pets: PetMessageWriters,
     mut economy: EconomyMessageWriters,
     mut connection: ResMut<ConnectionStatus>,
 ) {
@@ -271,16 +326,25 @@ fn poll_nakama_events(
                     active_meta.room_id = snap.room_id.clone();
                     active_meta.room_name = snap.room_name.clone();
 
+                    // Always recomputed for the room being entered, never inherited from the previous one.
+                    let (owner_id, is_owner) = crate::navigator::resolve_ownership(
+                        &snap.room_id,
+                        &snap.owner_id,
+                        &net.local_user_id,
+                        &nav_state.my_rooms,
+                    );
+                    active_meta.owner_id = owner_id;
+                    active_meta.is_owner = is_owner;
                     if snap.room_id == "lobby" || snap.room_id == "cafe" {
-                        active_meta.is_owner = false;
                         active_meta.visibility = "public".to_string();
-                    } else if let Some(mine) = nav_state
+                    } else if let Some(listed) = nav_state
                         .my_rooms
                         .iter()
+                        .chain(nav_state.popular_rooms.iter())
+                        .chain(nav_state.search_results.iter())
                         .find(|r| r.room_id == snap.room_id)
                     {
-                        active_meta.is_owner = true;
-                        active_meta.visibility = mine.visibility.clone();
+                        active_meta.visibility = listed.visibility.clone();
                     }
 
                     snapshot_events.write(NetRoomSnapshotEvent(snap));
@@ -313,6 +377,7 @@ fn poll_nakama_events(
                         closed.reason
                     );
                     active_meta.is_owner = false;
+                    active_meta.owner_id = None;
                     active_meta.visibility = "public".to_string();
                     net.handle.send_command(NakamaCommand::RequestJoinRoom {
                         room_id: "lobby".to_string(),
@@ -334,10 +399,38 @@ fn poll_nakama_events(
                     furni_writers.rejected.write(NetBuildModeRejectedEvent(rej));
                 }
                 ServerMessage::AvatarAppearanceUpdated(upd) => {
-                    appearance_events.write(NetAvatarAppearanceUpdatedEvent(upd));
+                    emotes
+                        .appearance
+                        .write(NetAvatarAppearanceUpdatedEvent(upd));
                 }
                 ServerMessage::AvatarPostureChanged(change) => {
-                    posture_events.write(NetAvatarPostureChangedEvent(change));
+                    emotes.posture.write(NetAvatarPostureChangedEvent(change));
+                }
+                ServerMessage::AvatarExpressionChanged(change) => {
+                    emotes
+                        .expression
+                        .write(NetAvatarExpressionChangedEvent(change));
+                }
+                ServerMessage::AvatarHoldingChanged(change) => {
+                    emotes.holding.write(NetAvatarHoldingChangedEvent(change));
+                }
+                ServerMessage::AvatarAction(action) => {
+                    emotes.action.write(NetAvatarActionEvent(action));
+                }
+                ServerMessage::PetPlaced(pet) => {
+                    pets.placed.write(NetPetPlacedEvent(pet));
+                }
+                ServerMessage::PetPath(path) => {
+                    pets.path.write(NetPetPathEvent(path));
+                }
+                ServerMessage::PetAction(action) => {
+                    pets.action.write(NetPetActionEvent(action));
+                }
+                ServerMessage::PetRemoved(removed) => {
+                    pets.removed.write(NetPetRemovedEvent(removed));
+                }
+                ServerMessage::PetInteractResult(result) => {
+                    pets.interaction.write(NetPetInteractResultEvent(result));
                 }
             },
 
@@ -399,6 +492,10 @@ fn poll_nakama_events(
                 for r in &rooms {
                     if r.room_id == active_meta.room_id {
                         active_meta.is_owner = true;
+                        active_meta.owner_id = r
+                            .owner_id
+                            .clone()
+                            .or_else(|| Some(net.local_user_id.clone()));
                         active_meta.visibility = r.visibility.clone();
                     }
                 }
@@ -415,6 +512,19 @@ fn poll_nakama_events(
                     created.name, created.room_id
                 );
                 active_meta.is_owner = true;
+                active_meta.owner_id = Some(net.local_user_id.clone());
+                // Known as mine from now on, so the snapshot of the new room resolves to "mine" even
+                // before `MyRoomsLoaded` arrives.
+                nav_state.my_rooms.push(protocol::RoomSummaryDto {
+                    room_id: created.room_id.clone(),
+                    name: created.name.clone(),
+                    owner_id: Some(net.local_user_id.clone()),
+                    owner_name: None,
+                    visibility: created.visibility.clone(),
+                    user_count: 0,
+                    max_users: created.max_users,
+                    match_id: None,
+                });
                 active_meta.room_id = created.room_id.clone();
                 active_meta.room_name = created.name.clone();
                 active_meta.visibility = created.visibility.clone();
@@ -430,6 +540,7 @@ fn poll_nakama_events(
             NakamaEvent::RoomDeleted => {
                 info!("Room deleted successfully, redirecting to lobby");
                 active_meta.is_owner = false;
+                active_meta.owner_id = None;
                 active_meta.visibility = "public".to_string();
                 net.handle.send_command(NakamaCommand::RequestJoinRoom {
                     room_id: "lobby".to_string(),

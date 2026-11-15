@@ -72,6 +72,25 @@ pub fn decode_server_message(opcode: i64, data: &[u8]) -> Result<ServerMessage, 
             let msg: AvatarPostureChanged = serde_json::from_slice(data)?;
             Ok(ServerMessage::AvatarPostureChanged(msg))
         }
+        OPCODE_AVATAR_EXPRESSION_CHANGED => {
+            let msg: AvatarExpressionChanged = serde_json::from_slice(data)?;
+            Ok(ServerMessage::AvatarExpressionChanged(msg))
+        }
+        OPCODE_AVATAR_HOLDING_CHANGED => {
+            let msg: AvatarHoldingChanged = serde_json::from_slice(data)?;
+            Ok(ServerMessage::AvatarHoldingChanged(msg))
+        }
+        OPCODE_AVATAR_ACTION => {
+            let msg: AvatarAction = serde_json::from_slice(data)?;
+            Ok(ServerMessage::AvatarAction(msg))
+        }
+        OPCODE_PET_PLACED => Ok(ServerMessage::PetPlaced(serde_json::from_slice(data)?)),
+        OPCODE_PET_PATH => Ok(ServerMessage::PetPath(serde_json::from_slice(data)?)),
+        OPCODE_PET_ACTION => Ok(ServerMessage::PetAction(serde_json::from_slice(data)?)),
+        OPCODE_PET_REMOVED => Ok(ServerMessage::PetRemoved(serde_json::from_slice(data)?)),
+        OPCODE_PET_INTERACT_RESULT => Ok(ServerMessage::PetInteractResult(serde_json::from_slice(
+            data,
+        )?)),
         _ => Err(ProtocolError::UnknownOpcode(opcode)),
     }
 }
@@ -107,6 +126,22 @@ pub fn encode_client_message(msg: &ClientMessage) -> Result<(i64, Vec<u8>), Prot
             let bytes = serde_json::to_vec(req)?;
             Ok((OPCODE_UPDATE_APPEARANCE_REQUEST, bytes))
         }
+        ClientMessage::SetExpression(req) => {
+            let bytes = serde_json::to_vec(req)?;
+            Ok((OPCODE_SET_EXPRESSION_REQUEST, bytes))
+        }
+        ClientMessage::SetHolding(req) => {
+            let bytes = serde_json::to_vec(req)?;
+            Ok((OPCODE_SET_HOLDING_REQUEST, bytes))
+        }
+        ClientMessage::AvatarAction(req) => {
+            let bytes = serde_json::to_vec(req)?;
+            Ok((OPCODE_AVATAR_ACTION_REQUEST, bytes))
+        }
+        ClientMessage::PetInteract(req) => {
+            let bytes = serde_json::to_vec(req)?;
+            Ok((OPCODE_PET_INTERACT_REQUEST, bytes))
+        }
     }
 }
 
@@ -115,21 +150,86 @@ mod tests {
     use super::*;
 
     #[test]
-    fn appearance_from_the_previous_schema_still_parses() {
-        // Saved before the gender was removed and the face became a slot: the unknown
-        // `gender` is ignored and the missing `face_id` falls back to the default.
+    fn appearance_from_the_previous_schema_still_parses_as_the_default_look() {
+        // Saved with the version 1 schema (one colour per slot, accessories): the unknown fields
+        // are ignored and every v2 field falls back to its default; the server sanitizes it on load.
         let legacy = r##"{"gender":"girl","skin_color":"#D6A374","hair_id":"hair_girl_old","accessories":[]}"##;
         let parsed: AvatarAppearance = serde_json::from_str(legacy).unwrap();
-        assert_eq!(parsed.skin_color, "#D6A374");
-        assert_eq!(parsed.hair_id, "hair_girl_old");
+        assert_eq!(parsed.body_type, BODY_FEMALE);
         assert_eq!(parsed.face_id, AvatarAppearance::default().face_id);
+        assert_eq!(parsed.hair_id, "hair_girl_old");
+        assert!(parsed.colors.is_empty());
     }
 
     #[test]
-    fn appearance_serializes_the_face_and_no_gender() {
-        let json = serde_json::to_value(AvatarAppearance::default()).unwrap();
-        assert!(json.get("face_id").is_some());
-        assert!(json.get("gender").is_none());
+    fn appearance_v2_matches_the_shared_fixture() {
+        let raw = include_str!("../../../contract/fixtures/avatar_appearance.json");
+        let parsed: AvatarAppearance = serde_json::from_str(raw).unwrap();
+        assert_eq!(parsed.body_type, BODY_FEMALE);
+        assert_eq!(parsed.glasses_id, "Glasses.001");
+        assert_eq!(parsed.colors["top"], vec!["#2196F3", "", "#FFFFFF"]);
+        assert_eq!(parsed.face_morphs["eye_size"], 128);
+        // It serializes back to the same JSON value (the fixture is the contract).
+        let again = serde_json::to_value(&parsed).unwrap();
+        assert_eq!(
+            again,
+            serde_json::from_str::<serde_json::Value>(raw).unwrap()
+        );
+    }
+
+    #[test]
+    fn expression_holding_and_action_match_the_shared_fixtures() {
+        const USER: &str = "99a9a0e6-8152-4414-b657-3fbb1c77174e";
+        let expression: AvatarExpressionChanged = serde_json::from_str(include_str!(
+            "../../../contract/fixtures/avatar_expression_changed.json"
+        ))
+        .unwrap();
+        assert_eq!(
+            expression,
+            AvatarExpressionChanged {
+                user_id: USER.into(),
+                expression: "happy".into()
+            }
+        );
+        let holding: AvatarHoldingChanged = serde_json::from_str(include_str!(
+            "../../../contract/fixtures/avatar_holding_changed.json"
+        ))
+        .unwrap();
+        assert_eq!(holding.prop_id, "cup");
+        let action: AvatarAction = serde_json::from_str(include_str!(
+            "../../../contract/fixtures/avatar_action.json"
+        ))
+        .unwrap();
+        assert_eq!(action.action, ACTION_DRINK);
+
+        let (op, _) = encode_client_message(&ClientMessage::SetExpression(SetExpressionRequest {
+            expression: "sad".into(),
+        }))
+        .unwrap();
+        assert_eq!(op, 8);
+        let (op, _) = encode_client_message(&ClientMessage::SetHolding(SetHoldingRequest {
+            prop_id: "cup".into(),
+        }))
+        .unwrap();
+        assert_eq!(op, 9);
+        let (op, _) = encode_client_message(&ClientMessage::AvatarAction(AvatarActionRequest {
+            action: ACTION_DRINK.into(),
+        }))
+        .unwrap();
+        assert_eq!(op, 10);
+        for (op, name) in [(114, "expression"), (115, "holding"), (116, "action")] {
+            let data = match op {
+                114 => include_bytes!("../../../contract/fixtures/avatar_expression_changed.json")
+                    .as_slice(),
+                115 => include_bytes!("../../../contract/fixtures/avatar_holding_changed.json")
+                    .as_slice(),
+                _ => include_bytes!("../../../contract/fixtures/avatar_action.json").as_slice(),
+            };
+            assert!(
+                decode_server_message(op, data).is_ok(),
+                "{name} must decode"
+            );
+        }
     }
 
     #[test]
@@ -148,6 +248,7 @@ mod tests {
         let raw = r#"{
             "room_id": "lobby",
             "room_name": "Central Plaza",
+            "owner_id": "",
             "layout": {
                 "id": "lobby_12x10",
                 "width": 12,
@@ -341,6 +442,20 @@ mod tests {
     }
 
     #[test]
+    fn test_decode_room_snapshot_sample_with_owner_id() {
+        let raw = include_str!("../../../contract/fixtures/room_snapshot.json");
+        let snap: RoomSnapshot = serde_json::from_str(raw).unwrap();
+        assert_eq!(snap.owner_id, "99a9a0e6-8152-4414-b657-3fbb1c77174e");
+        assert_eq!(snap.avatars.len(), 1);
+    }
+
+    #[test]
+    fn a_room_snapshot_without_owner_id_is_rejected_since_protocol_2() {
+        let raw = r#"{"room_id":"r","room_name":"r","layout":{"id":"l","width":1,"height":1,"door":[0,0],"heightmap":[]},"avatars":[]}"#;
+        assert!(serde_json::from_str::<RoomSnapshot>(raw).is_err());
+    }
+
+    #[test]
     fn test_decode_shop_catalog_sample() {
         let raw = include_str!("../../../contract/fixtures/shop_catalog.json");
         let cat: GetShopCatalogResponse = serde_json::from_str(raw).unwrap();
@@ -400,5 +515,76 @@ mod tests {
         assert!(wallet.covers(10, 2));
         assert!(!wallet.covers(11, 0));
         assert!(!wallet.covers(0, 3));
+    }
+
+    #[test]
+    fn pet_messages_match_the_shared_fixtures() {
+        let fixture = |name: &str| {
+            std::fs::read(format!(
+                "{}/../../contract/fixtures/{name}",
+                env!("CARGO_MANIFEST_DIR")
+            ))
+            .unwrap()
+        };
+        let ServerMessage::PetPlaced(placed) =
+            decode_server_message(OPCODE_PET_PLACED, &fixture("pet_placed.json")).unwrap()
+        else {
+            panic!("not a pet placed");
+        };
+        assert_eq!(
+            (placed.species.as_str(), placed.breed.as_str()),
+            ("dog", "shihtzu")
+        );
+        assert_eq!(
+            (placed.coat.as_str(), placed.action.as_str()),
+            ("default", "idle")
+        );
+        let ServerMessage::PetPath(path) =
+            decode_server_message(OPCODE_PET_PATH, &fixture("pet_path.json")).unwrap()
+        else {
+            panic!("not a pet path");
+        };
+        assert_eq!(path.path, vec![[5, 3], [6, 3], [6, 4]]);
+        assert_eq!((path.tiles_per_sec, path.action.as_str()), (0.35, "walk"));
+        let ServerMessage::PetAction(action) =
+            decode_server_message(OPCODE_PET_ACTION, &fixture("pet_action.json")).unwrap()
+        else {
+            panic!("not a pet action");
+        };
+        assert_eq!((action.action.as_str(), action.rotation), ("bark", 4));
+        assert!(matches!(
+            decode_server_message(OPCODE_PET_REMOVED, &fixture("pet_removed.json")),
+            Ok(ServerMessage::PetRemoved(_))
+        ));
+        let ServerMessage::PetInteractResult(result) = decode_server_message(
+            OPCODE_PET_INTERACT_RESULT,
+            &fixture("pet_interact_result.json"),
+        )
+        .unwrap() else {
+            panic!("not a result");
+        };
+        assert!(!result.ok);
+        assert_eq!(result.reason, "unsupported_interaction");
+        let request: PetInteractRequest =
+            serde_json::from_slice(&fixture("pet_interact_request.json")).unwrap();
+        let (op, bytes) =
+            encode_client_message(&ClientMessage::PetInteract(request.clone())).unwrap();
+        assert_eq!(op, OPCODE_PET_INTERACT_REQUEST);
+        assert_eq!(
+            serde_json::from_slice::<PetInteractRequest>(&bytes).unwrap(),
+            request
+        );
+    }
+
+    #[test]
+    fn the_room_snapshot_fixture_carries_its_pets_and_one_without_pets_still_parses() {
+        let raw = include_str!("../../../contract/fixtures/room_snapshot.json");
+        let snapshot: RoomSnapshot = serde_json::from_str(raw).unwrap();
+        assert_eq!(snapshot.pets.len(), 1);
+        assert_eq!(snapshot.pets[0].action, "sit");
+        let mut value: serde_json::Value = serde_json::from_str(raw).unwrap();
+        value.as_object_mut().unwrap().remove("pets");
+        let old: RoomSnapshot = serde_json::from_value(value).unwrap();
+        assert!(old.pets.is_empty());
     }
 }

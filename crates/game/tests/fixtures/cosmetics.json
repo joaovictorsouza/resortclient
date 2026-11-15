@@ -1,89 +1,93 @@
 {
-  "version": 1,
+  "version": 3,
   "items": [
     {
-      "id": "body_test",
-      "name": "Body Test",
-      "category": "body",
-      "asset_path": "characters/parts/body/body_test.glb",
-      "tint": false
-    },
-    {
-      "id": "male_emotion_usual_001",
-      "name": "Male Emotion Usual 001",
+      "id": "F_head.001",
+      "name": "F_head.001",
       "category": "face",
-      "asset_path": "characters/parts/face/male_emotion_usual_001.glb",
-      "tint": false
+      "body_types": [
+        "female"
+      ]
     },
     {
-      "id": "male_emotion_happy_001",
-      "name": "Male Emotion Happy 001",
+      "id": "M_head.001",
+      "name": "M_head.001",
       "category": "face",
-      "asset_path": "characters/parts/face/male_emotion_happy_001.glb",
-      "tint": false
+      "body_types": [
+        "male"
+      ]
     },
     {
-      "id": "hairstyle_male_010",
-      "name": "Hairstyle Male 010",
+      "id": "Hairstyle.06",
+      "name": "Hairstyle.06",
       "category": "hair",
-      "asset_path": "characters/parts/hair/hairstyle_male_010.glb",
-      "tint": true
+      "body_types": [
+        "female",
+        "male"
+      ]
     },
     {
-      "id": "hairstyle_male_011",
-      "name": "Hairstyle Male 011",
-      "category": "hair",
-      "asset_path": "characters/parts/hair/hairstyle_male_011.glb",
-      "tint": true
-    },
-    {
-      "id": "t_shirt_009",
-      "name": "T Shirt 009",
+      "id": "Top.01",
+      "name": "Top.01",
       "category": "top",
-      "asset_path": "characters/parts/top/t_shirt_009.glb",
-      "tint": true
+      "body_types": [
+        "female",
+        "male"
+      ]
     },
     {
-      "id": "hoodie_001",
-      "name": "Hoodie 001",
-      "category": "top",
-      "asset_path": "characters/parts/top/hoodie_001.glb",
-      "tint": true
-    },
-    {
-      "id": "pants_010",
-      "name": "Pants 010",
+      "id": "Bot.01",
+      "name": "Bot.01",
       "category": "bottom",
-      "asset_path": "characters/parts/bottom/pants_010.glb",
-      "tint": true
+      "body_types": [
+        "female",
+        "male"
+      ]
     },
     {
-      "id": "shorts_001",
-      "name": "Shorts 001",
-      "category": "bottom",
-      "asset_path": "characters/parts/bottom/shorts_001.glb",
-      "tint": true
-    },
-    {
-      "id": "shoe_sneakers_009",
-      "name": "Shoe Sneakers 009",
+      "id": "Shoes.01",
+      "name": "Shoes.01",
       "category": "shoes",
-      "asset_path": "characters/parts/shoes/shoe_sneakers_009.glb",
-      "tint": true
+      "body_types": [
+        "female",
+        "male"
+      ]
     },
     {
-      "id": "cap_001",
-      "name": "Cap 001",
-      "category": "accessory",
-      "asset_path": "characters/parts/accessory/cap_001.glb",
-      "tint": false
+      "id": "Outfit.01",
+      "name": "Outfit.01",
+      "category": "outfit",
+      "body_types": [
+        "female",
+        "male"
+      ]
     },
     {
-      "id": "glasses_001",
-      "name": "Glasses 001",
-      "category": "accessory",
-      "asset_path": "characters/parts/accessory/glasses_001.glb",
-      "tint": false
+      "id": "Hat.001-1",
+      "name": "Hat.001-1",
+      "category": "hat",
+      "body_types": [
+        "female",
+        "male"
+      ]
+    },
+    {
+      "id": "Glasses.001",
+      "name": "Glasses.001",
+      "category": "glasses",
+      "body_types": [
+        "female",
+        "male"
+      ]
+    },
+    {
+      "id": "cup",
+      "name": "cup",
+      "category": "prop",
+      "body_types": [
+        "female",
+        "male"
+      ]
     }
   ]
 }

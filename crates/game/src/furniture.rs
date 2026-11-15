@@ -14,7 +14,7 @@ use crate::net::{
     NakamaResource, NetBuildModeRejectedEvent, NetInventoryLoadedEvent, NetItemMovedEvent,
     NetItemPlacedEvent, NetItemRemovedEvent, NetItemRotatedEvent, NetRoomSnapshotEvent,
 };
-use crate::room::Tile;
+use crate::room::{FLOOR_TILE_TOP, Tile};
 use crate::state::AppState;
 
 // ---------------------------------------------------------------------------
@@ -47,9 +47,6 @@ pub fn calculate_occupied_tiles(
     tiles
 }
 
-/// Height of the top surface of the floor tiles (`Cuboid` of 0.2 centered at y = 0.1).
-pub const FLOOR_TILE_TOP: f32 = 0.2;
-
 /// Computes the world center position and mesh dimensions for a furniture piece.
 pub fn calculate_furniture_transform(
     x: i32,
@@ -61,10 +58,8 @@ pub fn calculate_furniture_transform(
     let height = if walkable { 0.04 } else { 0.8 };
     let center_x = x as f32 + (width as f32) / 2.0;
     let center_z = z as f32 + (depth as f32) / 2.0;
-    // Floor decorations lie on top of the floor tiles (whose top surface is at y = 0.2);
-    // solid furniture keeps standing from the avatar's ground level.
-    let base_y = if walkable { FLOOR_TILE_TOP } else { 0.1 };
-    let center_y = base_y + (height / 2.0);
+    // Everything rests on top of the floor tiles, which are only a subfloor.
+    let center_y = FLOOR_TILE_TOP + (height / 2.0);
 
     let position = Vec3::new(center_x, center_y, center_z);
     let size = Vec3::new(width as f32 * 0.94, height, depth as f32 * 0.94);
@@ -228,6 +223,15 @@ pub struct BuildModeState {
     pub skip_first_click: bool,
 }
 
+/// A pointer the game cannot see (the Compose shell owns the finger during an inventory drag): the
+/// ghost follows [`position`](Self::position) in logical pixels, and [`confirm`](Self::confirm) acts as the
+/// release that places the item. The ghost system consumes the confirmation.
+#[derive(Resource, Debug, Default, PartialEq)]
+pub struct ExternalPointer {
+    pub position: Option<Vec2>,
+    pub confirm: bool,
+}
+
 impl Default for BuildModeState {
     fn default() -> Self {
         Self {
@@ -284,6 +288,10 @@ pub struct HudBuildModeText;
 #[derive(Component)]
 pub struct FurnitureContextMenuRoot;
 
+/// Present when the Compose shell draws the furniture options menu: the bevy_hui one is not spawned then.
+#[derive(Resource)]
+pub struct ComposeFurnitureMenu;
+
 #[derive(Component)]
 pub struct ContextRotateBtn(pub String); // item_id
 
@@ -305,6 +313,7 @@ pub struct FurniturePlugin;
 impl Plugin for FurniturePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<BuildModeState>()
+            .init_resource::<ExternalPointer>()
             .init_resource::<PlayerInventoryState>()
             .add_systems(
                 Update,
@@ -570,6 +579,46 @@ fn spawn_furniture_entity(
 
 /// Pointer for build mode: the mouse cursor, or the finger on a touch screen.
 /// Returns where it points and whether this frame confirms (mouse press, finger lifted).
+/// Tile of the walking surface hit by a ray (`None` when the ray is parallel to it or points away).
+pub fn ray_floor_tile(origin: Vec3, direction: Vec3) -> Option<(i32, i32)> {
+    if direction.y.abs() < 1e-6 {
+        return None;
+    }
+    let t = (FLOOR_TILE_TOP - origin.y) / direction.y;
+    if t < 0.0 {
+        return None;
+    }
+    let hit = origin + direction * t;
+    Some((hit.x.floor() as i32, hit.z.floor() as i32))
+}
+
+/// Every occupied tile must be floor, and a solid item cannot overlap another solid item.
+pub fn placement_valid(
+    occupied: &[(i32, i32)],
+    walkable: bool,
+    tile_exists: impl Fn(i32, i32) -> bool,
+    solid_at: impl Fn(i32, i32) -> bool,
+) -> bool {
+    occupied
+        .iter()
+        .all(|&(x, z)| tile_exists(x, z) && (walkable || !solid_at(x, z)))
+}
+
+/// Whether a solid placed item (other than `ignore`, the one being moved) covers the tile.
+pub fn solid_at(
+    furniture: &Query<&PlacedFurniture>,
+    tx: i32,
+    tz: i32,
+    ignore: Option<&str>,
+) -> bool {
+    furniture.iter().any(|f| {
+        if Some(f.item_id.as_str()) == ignore || f.walkable {
+            return false;
+        }
+        tx >= f.x && tx < f.x + f.width && tz >= f.z && tz < f.z + f.depth
+    })
+}
+
 fn build_pointer(
     window: &Window,
     mouse_button: &ButtonInput<MouseButton>,
@@ -604,6 +653,7 @@ fn handle_ghost_preview(
     mut materials: ResMut<Assets<StandardMaterial>>,
     ui_interaction: Query<&Interaction, With<Node>>,
     net: Option<Res<NakamaResource>>,
+    mut external: ResMut<ExternalPointer>,
 ) {
     let Ok(window) = windows.single() else { return };
     let Ok((camera, camera_transform)) = cameras.single() else {
@@ -643,6 +693,7 @@ fn handle_ghost_preview(
             commands.entity(entity).despawn();
         }
         build_state.hovered_tile = None;
+        *external = ExternalPointer::default();
         return;
     }
 
@@ -656,7 +707,13 @@ fn handle_ghost_preview(
         build_state.skip_first_click = false;
     }
 
-    let (pointer, confirmed) = build_pointer(window, &mouse_button, &touches);
+    let (pointer, confirmed) = match external.position {
+        Some(position) => (Some(position), external.confirm),
+        None => build_pointer(window, &mouse_button, &touches),
+    };
+    if external.confirm {
+        *external = ExternalPointer::default(); // the release is consumed this frame
+    }
     let Some(cursor_pos) = pointer else {
         return;
     };
@@ -664,59 +721,25 @@ fn handle_ghost_preview(
         return;
     };
 
-    // Intersect plane Y = 0.1
-    let plane_y = 0.1;
-    let normal = Vec3::Y;
-    let denom = normal.dot(*ray.direction);
-
-    if denom.abs() < 1e-6 {
+    let Some((anchor_x, anchor_z)) = ray_floor_tile(ray.origin, *ray.direction) else {
         return;
-    }
-
-    let t = (plane_y - ray.origin.y) / ray.direction.y;
-    if t < 0.0 {
-        return;
-    }
-
-    let hit = ray.origin + *ray.direction * t;
-    let anchor_x = hit.x.floor() as i32;
-    let anchor_z = hit.z.floor() as i32;
+    };
 
     build_state.hovered_tile = Some((anchor_x, anchor_z));
 
     // Validate placement
     let occupied = calculate_occupied_tiles(anchor_x, anchor_z, width, depth);
-    let mut is_valid = true;
-
     let moving_item_id = if let BuildTool::Moving { item_id, .. } = &build_state.active_tool {
         Some(item_id.as_str())
     } else {
         None
     };
-
-    for &(tx, tz) in &occupied {
-        // Must be on a walkable floor tile
-        let tile_exists = tiles_query.iter().any(|tile| tile.x == tx && tile.z == tz);
-        if !tile_exists {
-            is_valid = false;
-            break;
-        }
-
-        // Solid items cannot overlap another solid item
-        if !walkable {
-            let overlaps_solid = furniture_query.iter().any(|f| {
-                if Some(f.item_id.as_str()) == moving_item_id || f.walkable {
-                    return false;
-                }
-                tx >= f.x && tx < f.x + f.width && tz >= f.z && tz < f.z + f.depth
-            });
-
-            if overlaps_solid {
-                is_valid = false;
-                break;
-            }
-        }
-    }
+    let is_valid = placement_valid(
+        &occupied,
+        walkable,
+        |tx, tz| tiles_query.iter().any(|tile| tile.x == tx && tile.z == tz),
+        |tx, tz| solid_at(&furniture_query, tx, tz, moving_item_id),
+    );
 
     build_state.is_valid_tile = is_valid;
 
@@ -748,6 +771,9 @@ fn handle_ghost_preview(
 
         commands.spawn((
             GhostPreviewEntity,
+            // The ghost keeps its translucent unlit material: the toon style would swap it and the ghost
+            // query (which reads the standard material) would lose it, leaking a new ghost every frame.
+            toon_avatar::NoSceneToon,
             Mesh3d(meshes.add(Cuboid::from_size(size))),
             MeshMaterial3d(mat),
             Transform::from_translation(world_pos),
@@ -865,7 +891,7 @@ fn handle_furniture_picking_in_build_mode(
         return;
     };
 
-    let plane_y = 0.1;
+    let plane_y = FLOOR_TILE_TOP;
     let normal = Vec3::Y;
     let denom = normal.dot(*ray.direction);
     if denom.abs() < 1e-6 {
@@ -943,6 +969,59 @@ fn handle_hud_mode_buttons(
     }
 }
 
+/// Context menu "Girar": turns a placed item a quarter turn (the server confirms). Shared by the bevy_hui
+/// button and the Compose shell's `furniture_rotate`.
+pub fn rotate_placed(furni: &PlacedFurniture, net: Option<&NakamaResource>) {
+    let next_rot = (furni.rotation + 1) % 4;
+    info!("Rotating item {} to {}", furni.item_id, next_rot);
+    if let Some(net) = net {
+        net.handle
+            .send_command(NakamaCommand::SendMessage(ClientMessage::RotateItem(
+                RotateItemRequest {
+                    item_id: furni.item_id.clone(),
+                    rotation: next_rot,
+                },
+            )));
+    }
+}
+
+/// Context menu "Mover": the item follows the pointer until a tile is picked. Shared by the bevy_hui
+/// button and the Compose shell's `furniture_move`.
+pub fn begin_move(build_state: &mut BuildModeState, furni: &PlacedFurniture) {
+    info!("Initiating move for item {}", furni.item_id);
+    let turned = furni.rotation % 2 == 1;
+    build_state.skip_first_click = true;
+    build_state.active_tool = BuildTool::Moving {
+        item_id: furni.item_id.clone(),
+        catalog_id: furni.catalog_id.clone(),
+        base_width: if turned { furni.depth } else { furni.width },
+        base_depth: if turned { furni.width } else { furni.depth },
+        walkable: furni.walkable,
+        color: parse_hex_color(&furni.color_hex),
+        rotation: furni.rotation,
+    };
+    build_state.selected_furniture_id = None;
+}
+
+/// Context menu "Recolher": sends the item back to the inventory. Shared by the bevy_hui button and the
+/// Compose shell's `furniture_pickup`.
+pub fn pickup_placed(
+    item_id: &str,
+    build_state: &mut BuildModeState,
+    net: Option<&NakamaResource>,
+) {
+    info!("Sending pickup request for item {}", item_id);
+    if let Some(net) = net {
+        net.handle
+            .send_command(NakamaCommand::SendMessage(ClientMessage::PickupItem(
+                PickupItemRequest {
+                    item_id: item_id.to_string(),
+                },
+            )));
+    }
+    build_state.selected_furniture_id = None;
+}
+
 fn handle_furniture_context_menu(
     mut commands: Commands,
     rotate_btn_query: Query<(&Interaction, &ContextRotateBtn), Changed<Interaction>>,
@@ -954,67 +1033,30 @@ fn handle_furniture_context_menu(
     net: Option<Res<NakamaResource>>,
     ui_font: Res<UiFont>,
     context_query: Query<Entity, With<FurnitureContextMenuRoot>>,
+    compose: Option<Res<ComposeFurnitureMenu>>,
 ) {
     // 4. Context Menu: Rotate
     for (interaction, btn) in rotate_btn_query.iter() {
-        if *interaction == Interaction::Pressed {
-            if let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0) {
-                let next_rot = (furni.rotation + 1) % 4;
-                info!("Rotating item {} to {}", btn.0, next_rot);
-                if let Some(net) = &net {
-                    net.handle
-                        .send_command(NakamaCommand::SendMessage(ClientMessage::RotateItem(
-                            RotateItemRequest {
-                                item_id: btn.0.clone(),
-                                rotation: next_rot,
-                            },
-                        )));
-                }
-            }
+        if *interaction == Interaction::Pressed
+            && let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0)
+        {
+            rotate_placed(furni, net.as_deref());
         }
     }
 
     // 5. Context Menu: Move
     for (interaction, btn) in move_btn_query.iter() {
-        if *interaction == Interaction::Pressed {
-            if let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0) {
-                info!("Initiating move for item {}", btn.0);
-                build_state.skip_first_click = true;
-                build_state.active_tool = BuildTool::Moving {
-                    item_id: furni.item_id.clone(),
-                    catalog_id: furni.catalog_id.clone(),
-                    base_width: if furni.rotation % 2 == 1 {
-                        furni.depth
-                    } else {
-                        furni.width
-                    },
-                    base_depth: if furni.rotation % 2 == 1 {
-                        furni.width
-                    } else {
-                        furni.depth
-                    },
-                    walkable: furni.walkable,
-                    color: parse_hex_color(&furni.color_hex),
-                    rotation: furni.rotation,
-                };
-                build_state.selected_furniture_id = None;
-            }
+        if *interaction == Interaction::Pressed
+            && let Some(furni) = furniture_query.iter().find(|f| f.item_id == btn.0)
+        {
+            begin_move(&mut build_state, furni);
         }
     }
 
     // 6. Context Menu: Pickup
     for (interaction, btn) in pickup_btn_query.iter() {
         if *interaction == Interaction::Pressed {
-            info!("Sending pickup request for item {}", btn.0);
-            if let Some(net) = &net {
-                net.handle
-                    .send_command(NakamaCommand::SendMessage(ClientMessage::PickupItem(
-                        PickupItemRequest {
-                            item_id: btn.0.clone(),
-                        },
-                    )));
-            }
-            build_state.selected_furniture_id = None;
+            pickup_placed(&btn.0, &mut build_state, net.as_deref());
         }
     }
 
@@ -1030,10 +1072,11 @@ fn handle_furniture_context_menu(
         for entity in context_query.iter() {
             commands.entity(entity).despawn();
         }
-        if let Some(ref sel_id) = build_state.selected_furniture_id {
-            if let Some(furni) = furniture_query.iter().find(|f| &f.item_id == sel_id) {
-                spawn_furniture_context_menu(&mut commands, furni, &ui_font);
-            }
+        if compose.is_none()
+            && let Some(ref sel_id) = build_state.selected_furniture_id
+            && let Some(furni) = furniture_query.iter().find(|f| &f.item_id == sel_id)
+        {
+            spawn_furniture_context_menu(&mut commands, furni, &ui_font);
         }
     }
 }
@@ -1181,6 +1224,45 @@ fn spawn_furniture_context_menu(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_ray_hits_the_floor_tile_under_it() {
+        // Straight down from above tile (3, 5).
+        let top = crate::room::FLOOR_TILE_TOP;
+        assert_eq!(
+            ray_floor_tile(Vec3::new(3.4, top + 10.0, 5.9), Vec3::NEG_Y),
+            Some((3, 5))
+        );
+        // Slanted ray: 1 unit forward in +x per unit down.
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.5, top + 2.0, 0.5), Vec3::new(1.0, -1.0, 0.0)),
+            Some((2, 0))
+        );
+    }
+
+    #[test]
+    fn a_ray_that_cannot_reach_the_floor_gives_no_tile() {
+        let top = crate::room::FLOOR_TILE_TOP;
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.0, top + 1.0, 0.0), Vec3::X),
+            None
+        );
+        assert_eq!(
+            ray_floor_tile(Vec3::new(0.0, top + 1.0, 0.0), Vec3::Y),
+            None
+        );
+    }
+
+    #[test]
+    fn placement_needs_floor_and_no_solid_overlap() {
+        let floor = |x: i32, z: i32| (0..4).contains(&x) && (0..4).contains(&z);
+        let solid = |x: i32, z: i32| x == 1 && z == 1;
+        assert!(placement_valid(&[(0, 0), (0, 1)], false, floor, solid));
+        assert!(!placement_valid(&[(3, 3), (4, 3)], false, floor, solid)); // off the floor
+        assert!(!placement_valid(&[(1, 1)], false, floor, solid)); // on a solid item
+        assert!(placement_valid(&[(1, 1)], true, floor, solid)); // a rug may overlap
+        assert!(!placement_valid(&[(9, 9)], true, floor, solid)); // still needs floor
+    }
+
     use super::*;
 
     #[test]
@@ -1245,9 +1327,9 @@ mod tests {
     fn floor_decorations_sit_on_top_of_the_floor_tiles() {
         let (pos, size) = calculate_furniture_transform(3, 4, 2, 2, true);
         assert!((pos.y - size.y / 2.0 - FLOOR_TILE_TOP).abs() < 1e-6);
-        // Solid furniture is unchanged.
+        // Solid furniture stands on the floor tiles too, not inside them.
         let (pos, size) = calculate_furniture_transform(3, 4, 1, 1, false);
-        assert!((pos.y - size.y / 2.0 - 0.1).abs() < 1e-6);
+        assert!((pos.y - size.y / 2.0 - FLOOR_TILE_TOP).abs() < 1e-6);
     }
 
     #[test]
