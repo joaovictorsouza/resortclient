@@ -116,6 +116,11 @@ object GameIcons {
             stroke { moveTo(4f, 4f); lineTo(20f, 20f) }
         }
     }
+    val Star by lazy {
+        icon("Star") {
+            stroke { moveTo(12f, 3.5f); lineTo(14.6f, 9f); lineTo(20.5f, 9.7f); lineTo(16.1f, 13.8f); lineTo(17.3f, 19.7f); lineTo(12f, 16.8f); lineTo(6.7f, 19.7f); lineTo(7.9f, 13.8f); lineTo(3.5f, 9.7f); lineTo(9.4f, 9f); close() }
+        }
+    }
     val Bell by lazy {
         icon("Bell") {
             stroke {
@@ -132,7 +137,7 @@ object GameIcons {
             "Shop" to Shop, "Backpack" to Backpack, "Compass" to Compass, "Hammer" to Hammer, "Gear" to Gear,
             "User" to User, "Close" to Close, "Search" to Search, "Back" to Back, "Check" to Check,
             "CoinSilver" to CoinSilver, "CoinGold" to CoinGold, "ChevronDown" to ChevronDown, "Lock" to Lock,
-            "Globe" to Globe, "EyeOff" to EyeOff, "Bell" to Bell,
+            "Globe" to Globe, "EyeOff" to EyeOff, "Star" to Star, "Bell" to Bell,
         )
 }
 
